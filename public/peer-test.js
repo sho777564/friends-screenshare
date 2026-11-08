@@ -1,0 +1,8 @@
+'use strict';
+const $=id=>document.getElementById(id),call=new FriendsMedia.Conference({name:'合成共享测试端'});let stream,animation,sharing=false;
+const state=()=>call.sendData({type:'state',screen:sharing,sound:false,mic:false,deafened:false,speaking:false});
+call.addEventListener('dataready',state);call.addEventListener('status',e=>$('status').textContent=e.detail.message);
+function frame(time){const ctx=$('canvas').getContext('2d');ctx.fillStyle='#102939';ctx.fillRect(0,0,1920,1080);for(let x=0;x<1920;x+=80)for(let y=0;y<1080;y+=80){ctx.fillStyle=((x+y)/80)%2?'#1f5368':'#173e53';ctx.fillRect(x,y,40,40);}for(let i=0;i<14;i++){ctx.fillStyle=`hsl(${(i*26+time/100)%360} 70% 55%)`;ctx.fillRect((time*.3+i*130)%2200-240,i*70,260,24);}ctx.fillStyle='#fff';ctx.font='52px sans-serif';ctx.fillText('1920 × 1080 / FULLSCREEN TEST',80,490);ctx.font='30px monospace';ctx.fillText((time/1000).toFixed(2)+' s',80,560);}
+$('start').onclick=async()=>{try{$('start').disabled=true;const defaults=await(await fetch('room-defaults.json')).json();if(!call.socket)await call.join(defaults.id);sharing=true;frame(0);animation=setInterval(()=>frame(performance.now()),1000/60);stream=$('canvas').captureStream(60);await call.setTrack('screen',stream.getVideoTracks()[0],stream);state();$('stop').disabled=false;}catch(e){$('status').textContent=e.message;$('start').disabled=false;}};
+$('stop').onclick=async()=>{sharing=false;clearInterval(animation);await call.setTrack('screen',null);stream?.getTracks().forEach(t=>t.stop());state();$('stop').disabled=true;$('start').disabled=false;};
+window.addEventListener('pagehide',()=>{clearInterval(animation);stream?.getTracks().forEach(t=>t.stop());call.leave();});

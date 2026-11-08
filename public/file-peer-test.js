@@ -1,0 +1,10 @@
+'use strict';
+const sources=new Map(),sinks=new Map(),call=new FriendsMedia.Conference({name:'合成文件测试端'});
+const digest=async data=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)),b=>b.toString(16).padStart(2,'0')).join('');
+const io={read:async id=>{const s=sources.get(id),bytes=s.bytes.slice(s.offset,s.offset+16384);s.offset+=bytes.length;return bytes;},sourceEnd:async id=>{const s=sources.get(id);sources.delete(id);return digest(s.bytes);},sourceClose:async id=>{sources.delete(id);},accept:async meta=>{const token=crypto.randomUUID();sinks.set(token,{parts:[],size:meta.size});return {token};},write:async(id,data)=>{sinks.get(id).parts.push(data);},finish:async(id,sha)=>{const s=sinks.get(id),bytes=new Uint8Array(s.size);let n=0;for(const p of s.parts){bytes.set(p,n);n+=p.length;}if(await digest(bytes)!==sha)throw new Error('Synthetic receiver checksum mismatch');sinks.delete(id);return {name:'synthetic-received'};},cancel:async id=>{sinks.delete(id);}};
+const transfers=new FriendsFiles.Transfers(call,io);
+transfers.addEventListener('update',e=>{if(e.detail.status==='offered')transfers.accept(e.detail.id);document.getElementById('status').textContent=JSON.stringify([...transfers.items.values()].map(t=>({name:t.name,direction:t.direction,status:t.status,bytes:t.bytes,size:t.size,error:t.error})),null,2);});
+document.getElementById('join').onclick=async()=>{const room=new URLSearchParams(location.search).get('room');if(!/^[A-Za-z0-9_-]{3,100}$/.test(room))throw new Error('Use an explicit test room');await call.join(room);document.getElementById('join').disabled=true;};
+call.addEventListener('dataready',()=>{document.getElementById('send').disabled=false;call.sendData({type:'state',mic:false,screen:false,sound:false});});
+document.getElementById('send').onclick=()=>{const bytes=new Uint8Array(3*1024*1024+7);for(let i=0;i<bytes.length;i++)bytes[i]=(i*37+19)%256;const token=crypto.randomUUID();sources.set(token,{bytes,offset:0});transfers.send([...call.peers.keys()][0],[{token,name:'合成测试文件-3MB.bin',size:bytes.length}]);};
+window.addEventListener('pagehide',()=>{transfers.close();call.leave();});

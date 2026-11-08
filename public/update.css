@@ -1,0 +1,5 @@
+.update-panel{margin:22px 0;padding:18px;background:#232428;border:1px solid #404249;border-radius:10px}
+.update-panel h3{margin-top:0}.update-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.update-panel details{margin-top:16px}.update-panel input{width:100%}.update-panel summary{cursor:pointer;color:#b5bac1}
+.update-banner{position:fixed;top:46px;right:315px;z-index:30;display:flex;gap:14px;align-items:center;background:#303b68;color:#f2f3f5;box-shadow:0 3px 16px #0005;border:1px solid #5865f2;border-radius:8px;padding:8px 12px}
+.update-banner[hidden]{display:none}.update-banner button{white-space:nowrap}.mini-mode .update-banner{display:none}

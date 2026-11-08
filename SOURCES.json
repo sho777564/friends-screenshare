@@ -1,0 +1,15 @@
+{
+  "application": "Friends Screen Share 2.6.2",
+  "electron": {
+    "version": "45.2.1",
+    "url": "https://github.com/electron/electron/releases/download/v45.2.1/electron-v45.2.1-win32-x64.zip",
+    "sha256": "7c342aee45d5b4ccafe5dfe9037028796b082735a576e21e2b4e2d8422ebb727"
+  },
+  "signaling": "https://p2p.mirotalk.com",
+  "mirotalkSource": "https://github.com/miroslavpejic85/mirotalk",
+  "rnnoise": {
+    "source": "https://github.com/xiph/rnnoise",
+    "wasmSha256": "d3375eb58faa5e17bc18971969df1af274fe581a9208abc0d12aea10769ca7cf"
+  },
+  "note": "Runtime and all client source included; no credentials or personal settings bundled."
+}

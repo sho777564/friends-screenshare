@@ -1,0 +1,9 @@
+.run/
+.rollback/
+runtime/
+build-manifest.json
+*.zip
+*.zip.part
+*.pfx
+*.pem
+!desktop/update-public-key.pem
