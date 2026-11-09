@@ -10,20 +10,50 @@
     const SIGNAL = 'https://p2p.mirotalk.com';
     const KINDS = ['voice', 'sound', 'screen'];
     const MAX_PARTICIPANTS=4;
+    const VOICE_BITRATE = 64_000;
+    const SOUND_BITRATE = 256_000;
+    const MIN_VIDEO_BITRATE = 50_000;
     const peerVideoBudget=(quality,peers)=>({...quality,bitrate:quality.bitrate/Math.max(1,peers)});
     function videoFrameTarget(quality, bitrate) {
         if (!quality.adaptive || quality.fps <= 30) return quality.fps;
         const motionBudget = quality.width * quality.height * quality.fps * .05;
         return bitrate < motionBudget ? 30 : quality.fps;
     }
+    const limitedVideoProfiles = [
+        { bitrate: 1_400_000, height: 720, fps: 30 },
+        { bitrate: 800_000, height: 540, fps: 30 },
+        { bitrate: 390_000, height: 360, fps: 30 },
+        { bitrate: 150_000, height: 270, fps: 20 },
+        { bitrate: 0, height: 180, fps: 15 },
+    ];
+    function videoProfile(quality, bitrate, capture = {}) {
+        const width = capture.width || quality.width;
+        const height = capture.height || quality.height;
+        const fps = Math.min(quality.fps, capture.frameRate || quality.fps);
+        const full = { ...quality, width, height, fps };
+        if (!quality.adaptive || bitrate >= width * height * Math.min(fps, 30) * .05) {
+            return { width, height, fps: videoFrameTarget(full, bitrate), scale: 1, degradation: degradationFor(quality.mode) };
+        }
+        const profile = limitedVideoProfiles.find(level => bitrate >= level.bitrate);
+        const scale = Math.max(1, Math.max(width, height) / Math.round(profile.height * 16 / 9), Math.min(width, height) / profile.height);
+        return {
+            width: Math.floor(width / scale / 2) * 2,
+            height: Math.floor(height / scale / 2) * 2,
+            fps: Math.min(fps, profile.fps),
+            scale,
+            degradation: 'maintain-framerate',
+        };
+    }
     class VideoBudget {
         constructor() {
             this.bps = null;
             this.rtts = [];
+            this.estimates = [];
             this.goodSince = null;
             this.lastCut = -Infinity;
             this.reason = 'starting';
             this.lastIncrease = -Infinity;
+            this.audioReserve = 0;
         }
         ceiling(maximum, enabled) {
             if (!enabled) return maximum;
@@ -32,37 +62,49 @@
         }
         update(sample, maximum, now = Date.now()) {
             const current = this.ceiling(maximum, true);
-            const floor = Math.min(150_000, maximum);
+            const floor = Math.min(MIN_VIDEO_BITRATE, maximum);
             const rtt = sample.rttMs;
             if (Number.isFinite(rtt) && rtt > 0) this.rtts.push(rtt);
             if (this.rtts.length > 30) this.rtts.shift();
             const baseline = this.rtts.length ? Math.min(...this.rtts) : null;
             const available = sample.availableMbps;
-            const networkBudget = Number.isFinite(available) && available > 0
-                ? Math.max(floor, (available * 1_000_000 - 500_000) * .8) : maximum;
-            let target = maximum;
+            this.audioReserve = sample.audioReserve ?? 0;
+            const fresh = Number.isFinite(available) && available >= 0 ? available * 1_000_000 : null;
+            this.estimates.push(fresh);
+            if (this.estimates.length > 3) this.estimates.shift();
+            const recent = this.estimates.filter(value => value !== null).sort((a, b) => a - b);
+            const median = recent[Math.floor((recent.length - 1) / 2)];
+            const videoRoom = estimate => estimate === undefined || estimate === null
+                ? maximum : Math.max(floor, estimate * .88 - this.audioReserve);
+            const networkBudget = Math.min(maximum, videoRoom(median));
+            let target = current;
             const delayed = baseline !== null && rtt > baseline + 80;
             const losing = Number.isFinite(sample.remoteLoss) && sample.remoteLoss > 3;
             if (delayed || losing) {
                 this.goodSince = null;
                 if (now - this.lastCut >= 4000) {
                     const severe = rtt >= Math.max(350, baseline * 3);
-                    target = Math.min(target, networkBudget, current * (severe ? .55 : .8));
+                    target = Math.min(current, networkBudget, videoRoom(fresh), current * (severe ? .55 : .8));
                     this.lastCut = now;
-                } else target = Math.min(target, current);
+                }
                 this.reason = delayed ? 'delay' : 'loss';
+            } else if (networkBudget < current * .9) {
+                target = networkBudget;
+                this.goodSince = null;
+                this.lastCut = now;
+                this.reason = 'bandwidth';
             } else {
-                const healthy = baseline !== null && rtt <= baseline + 30;
+                const healthy = baseline !== null && Number.isFinite(rtt) && rtt <= baseline + 30;
                 if (!healthy) this.goodSince = null;
                 else if (this.goodSince === null) this.goodSince = now;
-                if (this.goodSince !== null && now - this.goodSince >= 8000 && now - this.lastIncrease >= 6000) {
-                    // Let native bandwidth probing discover recovered capacity.
-                    const step = current + Math.max(500_000, current * .15);
-                    target = Math.min(target, step);
+                if (this.goodSince !== null && now - this.goodSince >= 8000 && now - this.lastIncrease >= 4000) {
+                    // Leave a small probe margin when the current cap limits the estimate.
+                    const probe = sample.sentVideoBps >= current * .8 ? Math.min(150_000, current * .15) : 0;
+                    const step = current + Math.max(80_000, current * .35, Math.min(1_500_000, (networkBudget - current) * .3));
+                    target = Math.min(maximum, Math.max(current, Math.min(networkBudget + probe, step)));
                     this.lastIncrease = now;
                     this.reason = target > current ? 'recovering' : 'stable';
                 } else {
-                    target = Math.min(target, current);
                     this.reason = 'stable';
                 }
             }
@@ -97,7 +139,7 @@
                     const re = new RegExp('^a=fmtp:' + pt + ' ([^\\r\\n]*)', 'm');
                     const current = section.match(re);
                     const entries = current ? current[1].split(';').map(s => s.trim()).filter(s => s && !s.startsWith('x-google-start-bitrate=')) : [];
-                    entries.push('x-google-start-bitrate=' + Math.min(12000, quality.bitrate * 1000));
+                    entries.push('x-google-start-bitrate=' + Math.max(1, Math.round(Math.min(quality.adaptive ? 2500 : 12000, quality.bitrate * 1000))));
                     const line = 'a=fmtp:' + pt + ' ' + entries.join(';');
                     section = current ? section.replace(re, line) : section.replace(codec[0], codec[0] + '\r\n' + line);
                 }
@@ -117,7 +159,7 @@
             }
             for (const [key, value] of Object.entries({
                 stereo: stereo ? 1 : 0, 'sprop-stereo': stereo ? 1 : 0,
-                maxaveragebitrate: stereo ? 256000 : 64000,
+                maxaveragebitrate: stereo ? SOUND_BITRATE : VOICE_BITRATE,
                 maxplaybackrate: 48000, useinbandfec: 1, usedtx: 0,
             })) params.set(key, String(value));
             const replacement = 'a=fmtp:' + pt + ' ' + [...params].map(([k, v]) => k + '=' + v).join(';');
@@ -316,21 +358,32 @@
             const quality = peerVideoBudget(this.quality, this.peers.size);
             const maximum = quality.bitrate * 1_000_000;
             const bitrate = p.videoBudget.ceiling(maximum, this.quality.adaptive);
-            return { ...quality, bitrate: bitrate / 1_000_000, fps: videoFrameTarget(quality, bitrate) };
+            return { ...quality, ...videoProfile(quality, bitrate, this.tracks.screen?.getSettings()), bitrate: bitrate / 1_000_000 };
         }
         async adaptVideo(stats) {
-            if (!this.quality.adaptive || !this.tracks.screen) return;
+            const screen = this.tracks.screen;
+            if (!this.quality.adaptive || !screen) return;
             for (const sample of stats) {
                 const p = this.peers.get(sample.id);
-                if (!p || p.pc.connectionState !== 'connected') continue;
+                if (this.tracks.screen !== screen) break;
+                if (!p || p.pc.connectionState !== 'connected' || !sample.protocol) continue;
+                const sent = sample.media.filter(m => m.direction === 'send');
+                const outgoing = sent.find(m => m.kind === 'screen');
+                if (!outgoing) continue;
                 const maximum = peerVideoBudget(this.quality, this.peers.size).bitrate * 1_000_000;
-                const before = p.videoBudget.bps;
-                const outgoing = sample.media?.find(m => m.kind === 'screen' && m.direction === 'send');
-                const after = p.videoBudget.update({ ...sample, remoteLoss: outgoing?.remoteLoss }, maximum);
-                if (Math.abs(after - before) >= 50000) await this.applySenderQuality(p);
-                sample.videoCeilingMbps = p.videoBudget.bps / 1_000_000;
+                const soundRate = sent.find(m => m.kind === 'sound')?.bitrate ?? SOUND_BITRATE;
+                const audioReserve = (this.tracks.voice?.enabled ? VOICE_BITRATE : 0)
+                    + (this.tracks.sound?.enabled ? Math.min(SOUND_BITRATE, Math.max(128_000, soundRate * 1.15)) : 0);
+                const remoteLoss = Math.max(0, ...sent.map(m => m.remoteLossFresh ? m.remoteLoss : 0));
+                p.videoBudget.update({ ...sample, remoteLoss, audioReserve, sentVideoBps: outgoing.bitrate }, maximum);
+                await this.applySenderQuality(p, 'screen');
+                const profile = this.encodingQuality(p);
+                sample.videoCeilingMbps = profile.bitrate;
                 sample.videoBudgetReason = p.videoBudget.reason;
-                sample.videoTargetFps = this.encodingQuality(p).fps;
+                sample.videoTargetFps = profile.fps;
+                sample.videoTargetWidth = profile.width;
+                sample.videoTargetHeight = profile.height;
+                sample.audioReserveKbps = p.videoBudget.audioReserve / 1000;
             }
         }
         attachData(p, channel) {
@@ -414,23 +467,28 @@
                 if (track) await this.applySenderQuality(p);
             }));
         }
-        applySenderQuality(p) {
-            p.qualityQueue = (p.qualityQueue || Promise.resolve()).catch(() => {}).then(() => this.setSenderQuality(p));
+        applySenderQuality(p, onlyKind) {
+            p.qualityQueue = (p.qualityQueue || Promise.resolve()).catch(() => {}).then(() => this.setSenderQuality(p, onlyKind));
             return p.qualityQueue;
         }
-        async setSenderQuality(p) {
+        async setSenderQuality(p, onlyKind) {
             if (this.peers.get(p.id) !== p || p.pc.connectionState === 'closed') return;
-            for (const kind of KINDS) {
+            for (const kind of onlyKind ? [onlyKind] : KINDS) {
                 const sender = p.tx[kind]?.sender;
                 if (!sender) continue;
                 if (!sender.track || p.pc.signalingState !== 'stable') continue;
                 const params = sender.getParameters();
                 if (!params.encodings?.length) continue;
+                const profile = kind === 'screen' ? this.encodingQuality(p) : null;
+                const bitrate = profile ? Math.round(profile.bitrate * 1_000_000) : kind === 'sound' ? SOUND_BITRATE : VOICE_BITRATE;
+                const sameEncodings = params.encodings.every(enc => enc.maxBitrate === bitrate
+                    && (!profile || (enc.maxFramerate === profile.fps && enc.scaleResolutionDownBy === profile.scale)));
+                if (sameEncodings && (!profile || params.degradationPreference === profile.degradation)) continue;
                 for (const enc of params.encodings) {
-                    enc.maxBitrate = kind === 'screen' ? this.encodingQuality(p).bitrate * 1000000 : kind === 'sound' ? 256000 : 64000;
-                    if (kind === 'screen') { enc.maxFramerate = this.encodingQuality(p).fps; enc.scaleResolutionDownBy = 1; }
+                    enc.maxBitrate = bitrate;
+                    if (profile) { enc.maxFramerate = profile.fps; enc.scaleResolutionDownBy = profile.scale; }
                 }
-                if (kind === 'screen') params.degradationPreference = degradationFor(this.quality.mode);
+                if (profile) params.degradationPreference = profile.degradation;
                 try { await sender.setParameters(params); }
                 catch (error) { this.emit('warning', { message: '浏览器未接受部分编码参数：' + error.message }); }
             }
@@ -489,14 +547,14 @@
                     const source=reports.get(r.mediaSourceId);
                     let kind = KINDS.find(k => p.tx[k]?.mid === r.mid);
                     if (!kind && r.kind === 'video') kind = 'screen';
-                    const frames = outgoing ? r.framesEncoded : r.framesDecoded;
-                    const fps = r.framesPerSecond ?? (old && elapsed > 0 && frames !== undefined ? Math.max(0, (frames - old.frames) / elapsed) : null);
+                    const frames = outgoing ? (r.framesSent ?? r.framesEncoded) : r.framesDecoded;
+                    const frameDelta = counterDelta(frames, old?.frames);
+                    const fps = frameDelta !== null && elapsed > 0 ? frameDelta / elapsed : r.framesPerSecond ?? null;
                     const packets = r.packetsReceived || 0, lost = Math.max(0, r.packetsLost || 0);
                     const intervalPackets = old ? Math.max(0, packets - old.packets) : packets;
                     const intervalLost = old ? Math.max(0, lost - old.lost) : lost;
                     const total = intervalPackets + intervalLost;
                     const emitted = counterDelta(r.jitterBufferEmittedCount, old?.jitterBufferEmittedCount);
-                    const frameDelta = counterDelta(frames, old?.frames);
                     const freezeSeconds = counterDelta(r.totalFreezesDuration, old?.totalFreezesDuration);
                     const feedback = outgoing && r.remoteId ? reports.get(r.remoteId) : null;
                     media.push({ kind, direction: outgoing ? 'send' : 'receive', width: r.frameWidth, height: r.frameHeight,
@@ -504,9 +562,11 @@
                         limitation: r.qualityLimitationReason || '', loss: !outgoing && total ? intervalLost / total * 100 : 0,
                         jitterMs: r.jitter === undefined ? null : r.jitter * 1000,
                         remoteLoss: Number.isFinite(feedback?.fractionLost) ? Math.max(0, feedback.fractionLost * 100) : undefined,
+                        remoteLossFresh: Number.isFinite(feedback?.fractionLost) && feedback.timestamp !== old?.feedbackTimestamp,
+                        encoderTargetBps: r.targetBitrate,
                         captureFps:source?.framesPerSecond,captureWidth:source?.width,captureHeight:source?.height,
                         encoder:r.encoderImplementation,decoder:r.decoderImplementation,powerEfficient:r.powerEfficientEncoder,
-                        encodeMs: outgoing ? intervalMs(r.totalEncodeTime, old?.totalEncodeTime, frameDelta) : null,
+                        encodeMs: outgoing ? intervalMs(r.totalEncodeTime, old?.totalEncodeTime, counterDelta(r.framesEncoded, old?.framesEncoded)) : null,
                         decodeMs: outgoing ? null : intervalMs(r.totalDecodeTime, old?.totalDecodeTime, frameDelta),
                         jitterBufferMs: intervalMs(r.jitterBufferDelay, old?.jitterBufferDelay, emitted),
                         freezeCount: counterDelta(r.freezeCount, old?.freezeCount),
@@ -514,7 +574,7 @@
                         droppedFrames: counterDelta(r.framesDropped, old?.framesDropped),
                         concealedSamples: counterDelta(r.concealedSamples, old?.concealedSamples),
                     });
-                    now.set(r.id, { ...r, bytes, frames, lost, packets });
+                    now.set(r.id, { ...r, bytes, frames, lost, packets, feedbackTimestamp: feedback?.timestamp });
                 }
                 this.previous.set(p.id, now);
                 const local = pair && reports.get(pair.localCandidateId), remote = pair && reports.get(pair.remoteCandidateId);
@@ -532,5 +592,5 @@
             return output;
         }
     }
-    return { Conference, tuneSdp, displayConstraints, codecOrder, defaults, KINDS,videoHint,degradationFor,directIceServers,MAX_PARTICIPANTS,peerVideoBudget,VideoBudget,videoFrameTarget };
+    return { Conference, tuneSdp, displayConstraints, codecOrder, defaults, KINDS,videoHint,degradationFor,directIceServers,MAX_PARTICIPANTS,peerVideoBudget,VideoBudget,videoFrameTarget,videoProfile };
 });

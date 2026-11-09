@@ -23,12 +23,26 @@ async function run(){const clients=[],managers=[],remotes=[],tracks=[],timers=[]
   check('Total 12 Mbps video budget divides to 4 Mbps per remote member',clients.every(c=>[...c.peers.values()].every(p=>p.tx.screen.sender.getParameters().encodings.every(e=>e.maxBitrate===4000000))));
   const guarded = clients[0];
   const guardedPeer = guarded.peers.get(ids[1]);
-  await guarded.adaptVideo([{ id: ids[1], rttMs: 35, availableMbps: 10 }]);
-  await guarded.adaptVideo([{ id: ids[1], rttMs: 1006, availableMbps: .39 }]);
-  check('Real video sender accepts congestion ceiling while the two audio senders retain their bitrates',
-   guardedPeer.tx.screen.sender.getParameters().encodings[0].maxBitrate === 150000 &&
+  const tightLink = { id: ids[1], protocol:'udp', rttMs:76, availableMbps:.39, media:[
+   { kind:'screen', direction:'send', bitrate:80000 },
+   { kind:'sound', direction:'send', bitrate:100000 },
+  ] };
+  await guarded.adaptVideo([tightLink]);
+  const constrained = guardedPeer.tx.screen.sender.getParameters().encodings[0];
+  check('Real video sender scales down on a narrow link while the two audio senders retain their bitrates',
+   constrained.maxBitrate === 151200 && constrained.maxFramerate === 20 && constrained.scaleResolutionDownBy === 4/3 &&
+   tightLink.videoTargetHeight === 270 &&
    guardedPeer.tx.voice.sender.getParameters().encodings[0].maxBitrate === 64000 &&
    guardedPeer.tx.sound.sender.getParameters().encodings[0].maxBitrate === 256000);
+  const inbound = clients[1].peers.get(ids[0]).pc;
+  const deadline = Date.now() + 12000;
+  let scaled;
+  while (Date.now() < deadline) {
+   scaled = [...(await inbound.getStats()).values()].find(r => r.type === 'inbound-rtp' && r.kind === 'video' && r.frameHeight > 0 && r.frameHeight <= 270);
+   if (scaled) break;
+   await sleep(100);
+  }
+  check('The actual receiver decodes the smaller video after sender scaling', !!scaled, {width:scaled?.frameWidth,height:scaled?.frameHeight});
   for (const peer of guarded.peers.values()) { peer.videoBudget = new FriendsMedia.VideoBudget(); await guarded.applySenderQuality(peer); }
   const messages=clients.map(()=>[]);clients.forEach((c,i)=>c.addEventListener('data',e=>{if(e.detail.data.type==='chat')messages[i].push(e.detail.data.text);}));clients.forEach((c,i)=>c.sendData({type:'chat',text:ids[i]}));await until(()=>messages.every(m=>m.length===3),'group chat');check('Every group chat reaches exactly the other three members',messages.every((m,i)=>m.sort().join('')===ids.filter((_,j)=>i!==j).sort().join('')));
   const io=window.friendsDesktop.files;for(const c of clients){const m=new FriendsFiles.Transfers(c,io,{rate:()=>1024*1024});managers.push(m);m.addEventListener('update',e=>{if(e.detail.direction==='receive'&&e.detail.status==='offered')m.accept(e.detail.id);});}

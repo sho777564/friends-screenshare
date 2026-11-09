@@ -87,7 +87,8 @@ class ShareLog {
                     path: p.path, protocol: p.protocol, relayProtocol: p.relayProtocol,
                     rttMs: p.rttMs, availableMbps: p.availableMbps,
                     videoCeilingMbps: p.videoCeilingMbps, videoBudgetReason: p.videoBudgetReason,
-                    videoTargetFps: p.videoTargetFps,
+                    videoTargetWidth: p.videoTargetWidth, videoTargetHeight: p.videoTargetHeight,
+                    videoTargetFps: p.videoTargetFps, audioReserveKbps: p.audioReserveKbps,
                     media: p.media.filter(m => m.kind !== 'screen' || m.direction === log.direction),
                 }));
                 entries.push({

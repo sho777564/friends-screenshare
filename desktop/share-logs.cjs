@@ -7,7 +7,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 const CONNECTION_STATES = ['new', 'connecting', 'checking', 'connected', 'completed', 'disconnected', 'failed', 'closed', 'recovering'];
 const SIGNAL_STATES = ['connected', 'disconnected', 'error'];
 const END_REASONS = ['stopped', 'source-ended', 'source-changed', 'peer-left', 'room-left', 'navigation', 'renderer-exit', 'window-closed', 'app-quit'];
-const METRICS = ['width', 'height', 'fps', 'bitrate', 'loss', 'remoteLoss', 'jitterMs', 'captureFps', 'captureWidth', 'captureHeight', 'encodeMs', 'decodeMs', 'jitterBufferMs', 'freezeCount', 'freezeMs', 'droppedFrames', 'concealedSamples'];
+const METRICS = ['width', 'height', 'fps', 'bitrate', 'encoderTargetBps', 'loss', 'remoteLoss', 'jitterMs', 'captureFps', 'captureWidth', 'captureHeight', 'encodeMs', 'decodeMs', 'jitterBufferMs', 'freezeCount', 'freezeMs', 'droppedFrames', 'concealedSamples'];
 
 function numbers(source, keys) {
     const result = {};
@@ -64,7 +64,7 @@ function peer(source) {
         path: oneOf(source.path, ['等待连接', 'P2P 直连', 'TURN 中继']),
         protocol: oneOf(source.protocol, ['udp', 'tcp']),
         relayProtocol: oneOf(source.relayProtocol, ['udp', 'tcp', 'tls']),
-        ...numbers(source, ['rttMs', 'availableMbps', 'videoCeilingMbps', 'videoTargetFps']),
+        ...numbers(source, ['rttMs', 'availableMbps', 'videoCeilingMbps', 'videoTargetWidth', 'videoTargetHeight', 'videoTargetFps', 'audioReserveKbps']),
         videoBudgetReason: oneOf(source.videoBudgetReason, ['starting', 'stable', 'delay', 'loss', 'bandwidth', 'recovering']),
         media: Array.isArray(source.media) ? source.media.slice(0, 8).map(media).filter(Boolean) : [],
     };

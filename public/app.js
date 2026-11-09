@@ -471,19 +471,25 @@ setInterval(async()=>{
         }
         const connected=peers.filter(p=>p.state==='connected'),relays=connected.filter(p=>p.path==='TURN 中继').length;
         if(connected.length)$('connectionLabel').textContent='已连接 '+connected.length+'/'+peers.length+' 位 · '+(relays?relays+' 路中继':'全部直连');
-        for(const peer of peers){const box=document.createElement('div');box.className='stat-peer';const title=document.createElement('strong');title.textContent=peer.name+' · '+peer.path+' / '+peer.protocol.toUpperCase()+' · RTT '+fmt(peer.rttMs)+' ms'+(display&&settings.adaptive?' · 视频上限 '+fmt(peer.videoCeilingMbps,1)+' Mbps':'');box.append(title);
+        for(const peer of peers){const box=document.createElement('div');box.className='stat-peer';const title=document.createElement('strong');title.textContent=peer.name+' · '+peer.path+' / '+peer.protocol.toUpperCase()+' · RTT '+fmt(peer.rttMs)+' ms';box.append(title);
+            if(display){const line=document.createElement('div');line.className='stat-line';
+                line.textContent='本端估计上行 '+fmt(peer.availableMbps,2)+' Mbps'
+                    +(peer.videoTargetFps?' · 视频目标 '+peer.videoTargetWidth+'×'+peer.videoTargetHeight+' / '+peer.videoTargetFps+' 帧 · 视频上限 '+fmt(peer.videoCeilingMbps,2)+' Mbps':'');
+                box.append(line);
+            }
             for(const media of peer.media){if(media.kind!=='screen'&&media.direction!=='receive')continue;const line=document.createElement('div');line.className='stat-line';line.textContent=media.kind==='screen'?(media.direction==='send'?'发出 ':'收到 ')+(media.width||'—')+'×'+(media.height||'—')+' · '+fmt(media.fps,1)+' fps · '+fmt(media.bitrate===null?null:media.bitrate/1e6,2)+' Mbps · '+(media.codec||'')+' · '+(media.limitation==='cpu'?'编码负载限制':media.limitation==='bandwidth'?'网络带宽限制':''):(media.kind==='voice'?'语音 ':'共享声音 ')+fmt(media.bitrate===null?null:media.bitrate/1000)+' kbps';box.append(line);}
             $('stats').append(box);
         }
         for(const peer of peers){const rx=peer.media.find(m=>m.kind==='screen'&&m.direction==='receive');const card=cards.get(peer.id);if(card&&rx?.width&&rx.fps)card.status.textContent=rx.width+'×'+rx.height+' · '+fmt(rx.fps)+' fps · '+fmt(rx.bitrate/1e6,1)+' Mbps';}
-        $('advice').textContent=peers.some(p=>p.path==='TURN 中继')?'当前媒体经过公共中继，其路径和带宽可能限制画质。':'静止画面低帧率可能正常，请在游戏或视频运动时查看实际帧率。';
+        const constrained=display&&peers.some(p=>p.videoTargetFps&&Number.isFinite(p.availableMbps)&&p.availableMbps<1);
+        $('advice').textContent=constrained?'这一路可用上行偏低，正在降低视频发送目标，给语音和共享声音留出空间。':peers.some(p=>p.path==='TURN 中继')?'当前媒体经过公共中继，其路径和带宽可能限制画质。':'静止画面低帧率可能正常，请在游戏或视频运动时查看实际帧率。';
     }catch(error){console.warn(error);}finally{statsBusy=false;}
 },2000);
 if(native)native.info().then(info=>{desktopInfo=info;$('nativeBadge').textContent='Windows 桌面版 · '+info.version;$('engineInfo').textContent='Electron '+info.electron+' · Chromium '+info.chrome+' · Windows '+info.windows;});
 else{$('nativeBadge').textContent='网页预览 · 防回音共享请用桌面版';$('engineInfo').textContent='当前为浏览器预览。完整的系统声音排除需要桌面版。';}
 $('copyVideoDiagnostic').onclick=()=>run(async()=>{
     const captureSettings=display?.getVideoTracks()[0]?.getSettings();
-    const report={version:desktopInfo?.version||'2.6.2',quality:quality(),capture:captureSettings?{width:captureSettings.width,height:captureSettings.height,requestedFps:captureSettings.frameRate,surface:captureSettings.displaySurface}:null,peers:recentStats.map(p=>({path:p.path,protocol:p.protocol,rttMs:p.rttMs,availableMbps:p.availableMbps,media:p.media})),engine:desktopInfo?{electron:desktopInfo.electron,chrome:desktopInfo.chrome,gpu:desktopInfo.gpu}:null};
+    const report={version:desktopInfo?.version||'2.6.3',quality:quality(),capture:captureSettings?{width:captureSettings.width,height:captureSettings.height,requestedFps:captureSettings.frameRate,surface:captureSettings.displaySurface}:null,peers:recentStats.map(p=>({path:p.path,protocol:p.protocol,rttMs:p.rttMs,availableMbps:p.availableMbps,videoCeilingMbps:p.videoCeilingMbps,videoTargetWidth:p.videoTargetWidth,videoTargetHeight:p.videoTargetHeight,videoTargetFps:p.videoTargetFps,audioReserveKbps:p.audioReserveKbps,videoBudgetReason:p.videoBudgetReason,media:p.media})),engine:desktopInfo?{electron:desktopInfo.electron,chrome:desktopInfo.chrome,gpu:desktopInfo.gpu}:null};
     const text=JSON.stringify(report,null,2);if(native)await native.clipboard(text);else await navigator.clipboard.writeText(text);toast('视频诊断已复制（不含房间号、昵称或 IP 地址）。');
 });
 $('openShareLogs').onclick = () => run(() => native.shareLogs.open());

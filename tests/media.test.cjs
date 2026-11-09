@@ -10,9 +10,9 @@ test('Opus music parameters only affect the separate screen audio section', () =
     const updated = tuneSdp(sdp), sections = updated.split(/(?=^m=)/m);
     assert.match(sections[1], /stereo=0/); assert.match(sections[1], /maxaveragebitrate=64000/);
     assert.match(sections[2], /stereo=1/); assert.match(sections[2], /maxaveragebitrate=256000/);
-    assert.match(sections[3], /x-google-start-bitrate=12000/);
+    assert.match(sections[3], /x-google-start-bitrate=2500/);
     assert.doesNotMatch(updated, /\r\r|[^\r]\n/);
-    assert.match(updated, /a=rtpmap:96 VP8\/90000\r\na=fmtp:96 x-google-start-bitrate=12000\r\n/);
+    assert.match(updated, /a=rtpmap:96 VP8\/90000\r\na=fmtp:96 x-google-start-bitrate=2500\r\n/);
     assert.equal(tuneSdp(updated), updated, 'no duplicate fmtp after renegotiation');
 });
 test('Screen capture preserves music and requests bounded 1080p60', () => {
