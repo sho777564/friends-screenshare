@@ -48,6 +48,26 @@ test('adaptive frame targets use 30 under a limited video budget and 60 when it 
     assert.equal(videoFrameTarget({ ...defaults, fps: 30 }, 8_000_000), 30);
 });
 
+test('stable low-rate video can probe above the estimate without raising its resolution target', () => {
+    const budget = new VideoBudget();
+    const maximum = 25_000_000;
+    const sample = { rttMs: 40, availableMbps: 1.21, audioReserve: 320_000, sentVideoBps: 88_000 };
+    for (let now = 0; now <= 10000; now += 2000) budget.update(sample, maximum, now);
+    assert.equal(budget.bps, 744800);
+    assert.equal(videoProfile(defaults, budget.bps).height, 360);
+    assert.equal(budget.probeBps, 1132000);
+    assert.equal(budget.reason, 'probing');
+    budget.update(sample, maximum, 16000);
+    assert.equal(budget.probeBps, 0);
+    budget.update(sample, maximum, 20000);
+    assert.equal(budget.probeBps, 0);
+    budget.update(sample, maximum, 36000);
+    assert.equal(budget.reason, 'probing');
+    budget.update({ ...sample, remoteLoss: 8 }, maximum, 38000);
+    assert.equal(budget.probeBps, 0);
+    assert.equal(budget.reason, 'loss');
+});
+
 test('stable low-traffic screens do not cause repeated cuts from quality-limitation flags', () => {
     const budget = new VideoBudget();
     for (let time = 0; time < 60000; time += 2000) {

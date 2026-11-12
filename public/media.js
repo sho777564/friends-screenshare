@@ -54,6 +54,9 @@
             this.reason = 'starting';
             this.lastIncrease = -Infinity;
             this.audioReserve = 0;
+            this.probeBps = 0;
+            this.probeUntil = 0;
+            this.nextProbe = 0;
         }
         ceiling(maximum, enabled) {
             if (!enabled) return maximum;
@@ -80,8 +83,10 @@
             let target = current;
             const delayed = baseline !== null && rtt > baseline + 80;
             const losing = Number.isFinite(sample.remoteLoss) && sample.remoteLoss > 3;
+            if (now >= this.probeUntil) this.probeBps = 0;
             if (delayed || losing) {
                 this.goodSince = null;
+                this.probeBps = 0;
                 if (now - this.lastCut >= 4000) {
                     const severe = rtt >= Math.max(350, baseline * 3);
                     target = Math.min(current, networkBudget, videoRoom(fresh), current * (severe ? .55 : .8));
@@ -92,22 +97,34 @@
                 target = networkBudget;
                 this.goodSince = null;
                 this.lastCut = now;
+                this.probeBps = 0;
                 this.reason = 'bandwidth';
             } else {
                 const healthy = baseline !== null && Number.isFinite(rtt) && rtt <= baseline + 30;
-                if (!healthy) this.goodSince = null;
-                else if (this.goodSince === null) this.goodSince = now;
+                if (!healthy) {
+                    this.goodSince = null;
+                    this.probeBps = 0;
+                } else if (this.goodSince === null) this.goodSince = now;
                 if (this.goodSince !== null && now - this.goodSince >= 8000 && now - this.lastIncrease >= 4000) {
-                    // Leave a small probe margin when the current cap limits the estimate.
-                    const probe = sample.sentVideoBps >= current * .8 ? Math.min(150_000, current * .15) : 0;
                     const step = current + Math.max(80_000, current * .35, Math.min(1_500_000, (networkBudget - current) * .3));
-                    target = Math.min(maximum, Math.max(current, Math.min(networkBudget + probe, step)));
+                    target = Math.min(maximum, Math.max(current, Math.min(networkBudget, step)));
                     this.lastIncrease = now;
                     this.reason = target > current ? 'recovering' : 'stable';
+                    // A tiny downscaled image can stay far below its cap. Briefly
+                    // allow WebRTC to probe above its own estimate without resizing.
+                    if (now >= this.nextProbe && current < 3_200_000 && fresh > 0 && sample.sentVideoBps > 0) {
+                        const ceiling = Math.min(maximum, Math.round(fresh + Math.min(250_000, fresh * .2) - this.audioReserve));
+                        if (ceiling > target + 30_000) {
+                            this.probeBps = ceiling;
+                            this.probeUntil = now + 6000;
+                            this.nextProbe = now + 24000;
+                        }
+                    }
                 } else {
                     this.reason = 'stable';
                 }
             }
+            if (this.probeBps > target) this.reason = 'probing';
             this.bps = Math.round(Math.max(floor, target));
             return this.bps;
         }
@@ -358,7 +375,9 @@
             const quality = peerVideoBudget(this.quality, this.peers.size);
             const maximum = quality.bitrate * 1_000_000;
             const bitrate = p.videoBudget.ceiling(maximum, this.quality.adaptive);
-            return { ...quality, ...videoProfile(quality, bitrate, this.tracks.screen?.getSettings()), bitrate: bitrate / 1_000_000 };
+            const probe = Date.now() < p.videoBudget.probeUntil ? p.videoBudget.probeBps : 0;
+            const ceiling = Math.min(maximum, Math.max(bitrate, probe));
+            return { ...quality, ...videoProfile(quality, bitrate, this.tracks.screen?.getSettings()), bitrate: ceiling / 1_000_000 };
         }
         async adaptVideo(stats) {
             const screen = this.tracks.screen;
@@ -369,7 +388,7 @@
                 if (!p || p.pc.connectionState !== 'connected' || !sample.protocol) continue;
                 const sent = sample.media.filter(m => m.direction === 'send');
                 const outgoing = sent.find(m => m.kind === 'screen');
-                if (!outgoing) continue;
+                if (!outgoing?.width || !outgoing.height) continue;
                 const maximum = peerVideoBudget(this.quality, this.peers.size).bitrate * 1_000_000;
                 const soundRate = sent.find(m => m.kind === 'sound')?.bitrate ?? SOUND_BITRATE;
                 const audioReserve = (this.tracks.voice?.enabled ? VOICE_BITRATE : 0)

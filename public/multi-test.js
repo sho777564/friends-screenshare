@@ -24,7 +24,7 @@ async function run(){const clients=[],managers=[],remotes=[],tracks=[],timers=[]
   const guarded = clients[0];
   const guardedPeer = guarded.peers.get(ids[1]);
   const tightLink = { id: ids[1], protocol:'udp', rttMs:76, availableMbps:.39, media:[
-   { kind:'screen', direction:'send', bitrate:80000 },
+   { kind:'screen', direction:'send', width:640, height:360, bitrate:80000 },
    { kind:'sound', direction:'send', bitrate:100000 },
   ] };
   await guarded.adaptVideo([tightLink]);
@@ -43,6 +43,17 @@ async function run(){const clients=[],managers=[],remotes=[],tracks=[],timers=[]
    await sleep(100);
   }
   check('The actual receiver decodes the smaller video after sender scaling', !!scaled, {width:scaled?.frameWidth,height:scaled?.frameHeight});
+  guardedPeer.videoBudget.goodSince = Date.now() - 8000;
+  await guarded.adaptVideo([tightLink]);
+  const probing = guardedPeer.tx.screen.sender.getParameters().encodings[0];
+  check('A healthy narrow connection can probe without changing video size or frame target',
+   probing.maxBitrate === 276000 && probing.scaleResolutionDownBy === constrained.scaleResolutionDownBy &&
+   probing.maxFramerate === constrained.maxFramerate && tightLink.videoBudgetReason === 'probing');
+  tightLink.media[0].remoteLossFresh = true;
+  tightLink.media[0].remoteLoss = 8;
+  await guarded.adaptVideo([tightLink]);
+  check('Fresh loss cancels the probe immediately',
+   guardedPeer.tx.screen.sender.getParameters().encodings[0].maxBitrate <= 151200 && tightLink.videoBudgetReason === 'loss');
   for (const peer of guarded.peers.values()) { peer.videoBudget = new FriendsMedia.VideoBudget(); await guarded.applySenderQuality(peer); }
   const messages=clients.map(()=>[]);clients.forEach((c,i)=>c.addEventListener('data',e=>{if(e.detail.data.type==='chat')messages[i].push(e.detail.data.text);}));clients.forEach((c,i)=>c.sendData({type:'chat',text:ids[i]}));await until(()=>messages.every(m=>m.length===3),'group chat');check('Every group chat reaches exactly the other three members',messages.every((m,i)=>m.sort().join('')===ids.filter((_,j)=>i!==j).sort().join('')));
   const io=window.friendsDesktop.files;for(const c of clients){const m=new FriendsFiles.Transfers(c,io,{rate:()=>1024*1024});managers.push(m);m.addEventListener('update',e=>{if(e.detail.direction==='receive'&&e.detail.status==='offered')m.accept(e.detail.id);});}

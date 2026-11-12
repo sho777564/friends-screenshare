@@ -65,7 +65,7 @@ function peer(source) {
         protocol: oneOf(source.protocol, ['udp', 'tcp']),
         relayProtocol: oneOf(source.relayProtocol, ['udp', 'tcp', 'tls']),
         ...numbers(source, ['rttMs', 'availableMbps', 'videoCeilingMbps', 'videoTargetWidth', 'videoTargetHeight', 'videoTargetFps', 'audioReserveKbps']),
-        videoBudgetReason: oneOf(source.videoBudgetReason, ['starting', 'stable', 'delay', 'loss', 'bandwidth', 'recovering']),
+        videoBudgetReason: oneOf(source.videoBudgetReason, ['starting', 'stable', 'delay', 'loss', 'bandwidth', 'recovering', 'probing']),
         media: Array.isArray(source.media) ? source.media.slice(0, 8).map(media).filter(Boolean) : [],
     };
 }
