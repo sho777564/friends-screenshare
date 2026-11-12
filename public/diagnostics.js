@@ -11,7 +11,7 @@
 
     const areas = new Set(['application', 'renderer', 'native', 'ui', 'room', 'phone', 'signal', 'peer',
         'audio-output', 'microphone', 'screen', 'file', 'remote', 'update']);
-    const events = new Set(['start', 'ready', 'error', 'fallback', 'joined', 'left', 'state', 'cancel', 'stop']);
+    const events = new Set(['start', 'ready', 'error', 'fallback', 'joined', 'left', 'state', 'quality', 'cancel', 'stop']);
     const modes = new Set(['manual', 'invite', 'contact-call', 'saved-device', 'default-device']);
     const states = new Set(['idle', 'incoming', 'outgoing', 'connecting', 'waiting', 'connected', 'completed',
         'new', 'disconnected', 'failed', 'closed', 'recovering', 'crashed', 'killed', 'oom', 'launch-failed',
@@ -25,7 +25,13 @@
         'ERR_TUNNEL_CONNECTION_FAILED', 'ERR_CERT_DATE_INVALID', 'ERR_CERT_AUTHORITY_INVALID', 'ERR_NETWORK_CHANGED']);
     const reasons = new Set(['device-not-found', 'device-busy', 'permission-denied', 'room-timeout',
         'room-locked', 'room-full', 'room-rejected', 'lobby', 'already-joining', 'call-timeout', 'cancelled',
+        'remote-room-failed', 'contact-busy', 'contact-offline',
         'network', 'timeout', 'disk-full', 'checksum', 'port-in-use', 'unsupported', 'application-error']);
+    const voicePaths = new Set(['P2P 直连', 'TURN 中继']);
+    const voiceMetrics = {
+        rttMs: 60000, jitterMs: 60000, jitterBufferMs: 60000,
+        receiveLossPct: 100, sendLossPct: 100, concealedSamples: 4800000,
+    };
     const sources = new Set(['app.js', 'phone-ui.js', 'phone.js', 'media.js', 'audio.js', 'files.js', 'file-ui.js',
         'remote.js', 'remote-ui.js', 'update-ui.js', 'share-log.js', 'main.cjs', 'updates.cjs', 'remote-ipc.cjs',
         'file-ipc.cjs', 'file-store.cjs', 'server.cjs', 'share-logs.cjs']);
@@ -47,6 +53,10 @@
         else if (/正在连接房间|已经在房间/.test(message)) reason = 'already-joining';
         else if (/无人接听|通话连接超时/.test(message)) reason = 'call-timeout';
         else if (errorName === 'AbortError' || /呼叫已取消|取消了呼叫/.test(message)) reason = 'cancelled';
+        else if (/对方未能进入房间/.test(message)) reason = 'remote-room-failed';
+        else if (/对方忙线|正在其他房间通话/.test(message)) reason = 'contact-busy';
+        else if (/对方已离线|对方暂不在线/.test(message)) reason = 'contact-offline';
+        else if (/呼叫信令已断开/.test(message)) reason = 'network';
         else if (code === 'EADDRINUSE') reason = 'port-in-use';
         else if (code === 'ENOSPC' || /磁盘空间/.test(message)) reason = 'disk-full';
         else if (/校验失败|签名无效|checksum/i.test(message)) reason = 'checksum';
@@ -69,6 +79,15 @@
         if (codes.has(record.code)) entry.code = record.code;
         if (Number.isInteger(record.attempt) && record.attempt > 0 && record.attempt <= 1_000_000) entry.attempt = record.attempt;
         if (Number.isInteger(record.exitCode) && Math.abs(record.exitCode) <= 0xffffffff) entry.exitCode = record.exitCode;
+        if (record.area === 'peer' && record.event === 'quality' && record.voice) {
+            const voice = {};
+            if (voicePaths.has(record.voice.path)) voice.path = record.voice.path;
+            for (const [key, maximum] of Object.entries(voiceMetrics)) {
+                const value = record.voice[key];
+                if (Number.isFinite(value) && value >= 0 && value <= maximum) voice[key] = Math.round(value * 100) / 100;
+            }
+            if (Object.keys(voice).length) entry.voice = voice;
+        }
         if (typeof record.source === 'string' && record.source.length <= 64) {
             const frame = /^([\w.-]+\.(?:js|cjs)):\d{1,6}:\d{1,6}$/.exec(record.source);
             if (frame && sources.has(frame[1])) entry.source = record.source;

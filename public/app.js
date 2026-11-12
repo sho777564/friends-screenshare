@@ -25,6 +25,7 @@ let roomJoinInProgress=false;
 let restartForUpdate=false;
 let roomAttempt=0;
 let roomJoinFailure='';
+const lastVoiceSample = new Map();
 const shareLog = new ShareLog(native?.shareLogs, error => {
     console.warn(error);
     toast('共享日志写入失败，请检查客户端目录的写入权限和磁盘空间。');
@@ -437,6 +438,12 @@ call.addEventListener('peer', ({ detail }) => shareLog.connection(detail.id, 'jo
 call.addEventListener('connection', ({ detail }) => shareLog.connection(detail.id, detail.state));
 call.addEventListener('connection', ({ detail }) => diagnostic('peer','state',null,{attempt:roomAttempt,state:detail.state}));
 call.addEventListener('peerleft', ({ detail }) => {
+    lastVoiceSample.delete(detail.id);
+    diagnostic('peer','left',null,{attempt:roomAttempt});
+    if(joined&&!call.peers.size){
+        $('connectionLabel').textContent='等待朋友加入';
+        document.querySelector('.connection-panel').classList.remove('connected');
+    }
     shareLog.connection(detail.id, 'left');
     shareLog.end(detail.id, 'peer-left');
     syncShareLogControls();
@@ -456,11 +463,33 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&fullscreenA
 document.addEventListener('keyup',event=>{if(event.code==='Space'&&pttPressed){pttPressed=false;applyMute();}});window.addEventListener('blur',()=>{if(pttPressed){pttPressed=false;applyMute();}});
 let wasSpeaking=false;setInterval(()=>{const level=voice.level();$('inputLevel').style.width=Math.min(100,level*350)+'%';const speaking=!!rawMic&&!effectiveMuted()&&level>.012;document.querySelector('.local-card').classList.toggle('speaking',speaking);if(speaking!==wasSpeaking){wasSpeaking=speaking;publish(speaking);}},120);
 const fmt=(value,digits=0)=>typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'—';
+function recordVoiceQuality(peers) {
+    if (!joined || !native?.diagnostics) return;
+    const now = Date.now();
+    for (const peer of peers) {
+        if (peer.state !== 'connected' || !call.peers.has(peer.id)) continue;
+        const incoming = peer.media.find(media => media.kind === 'voice' && media.direction === 'receive');
+        const outgoing = peer.media.find(media => media.kind === 'voice' && media.direction === 'send');
+        if (!incoming && !outgoing) continue;
+        const voice = {
+            path: peer.path, rttMs: peer.rttMs, jitterMs: incoming?.jitterMs,
+            jitterBufferMs: incoming?.jitterBufferMs, receiveLossPct: incoming?.loss,
+            concealedSamples: incoming?.concealedSamples,
+            sendLossPct: outgoing?.remoteLossFresh ? outgoing.remoteLoss : undefined,
+        };
+        const impaired = voice.rttMs >= 200 || voice.jitterBufferMs >= 150 ||
+            voice.receiveLossPct >= 3 || voice.sendLossPct >= 3;
+        if (now - (lastVoiceSample.get(peer.id) ?? 0) < (impaired ? 4000 : 15000)) continue;
+        lastVoiceSample.set(peer.id, now);
+        diagnostic('peer','quality',null,{attempt:roomAttempt,voice});
+    }
+}
 setInterval(async()=>{
     if(statsBusy)return;statsBusy=true;
     try{
         const captureSettings=display?.getVideoTracks()[0]?.getSettings();if(captureSettings)$('captureStats').textContent=captureSettings.width+'×'+captureSettings.height+' · '+fmt(captureSettings.frameRate)+' fps 采集';
         const peers=await call.stats();recentStats=peers;$('stats').replaceChildren();
+        recordVoiceQuality(peers);
         await call.adaptVideo(peers);
         if (shareLog.active.size) {
             const fileTransfers = typeof transfers === 'undefined' ? 0 : [...transfers.items.values()].filter(t => t.status === 'transferring').length;
@@ -469,8 +498,14 @@ setInterval(async()=>{
                 signal: call.socket?.connected ? 'connected' : 'disconnected', capture: shareCapture(), quality: quality(),
             });
         }
-        const connected=peers.filter(p=>p.state==='connected'),relays=connected.filter(p=>p.path==='TURN 中继').length;
-        if(connected.length)$('connectionLabel').textContent='已连接 '+connected.length+'/'+peers.length+' 位 · '+(relays?relays+' 路中继':'全部直连');
+        const currentPeers=peers.filter(p=>call.peers.has(p.id));
+        const connected=currentPeers.filter(p=>p.state==='connected'),relays=connected.filter(p=>p.path==='TURN 中继').length;
+        if(joined){
+            $('connectionLabel').textContent=connected.length
+                ? '已连接 '+connected.length+'/'+currentPeers.length+' 位 · '+(relays?relays+' 路中继':'全部直连')
+                : currentPeers.length ? '正在连接朋友' : '等待朋友加入';
+            document.querySelector('.connection-panel').classList.toggle('connected',connected.length>0);
+        }
         for(const peer of peers){const box=document.createElement('div');box.className='stat-peer';const title=document.createElement('strong');title.textContent=peer.name+' · '+peer.path+' / '+peer.protocol.toUpperCase()+' · RTT '+fmt(peer.rttMs)+' ms';box.append(title);
             if(display){const line=document.createElement('div');line.className='stat-line';
                 line.textContent='本端估计上行 '+fmt(peer.availableMbps,2)+' Mbps'
@@ -489,7 +524,7 @@ if(native)native.info().then(info=>{desktopInfo=info;$('nativeBadge').textConten
 else{$('nativeBadge').textContent='网页预览 · 防回音共享请用桌面版';$('engineInfo').textContent='当前为浏览器预览。完整的系统声音排除需要桌面版。';}
 $('copyVideoDiagnostic').onclick=()=>run(async()=>{
     const captureSettings=display?.getVideoTracks()[0]?.getSettings();
-    const report={version:desktopInfo?.version||'2.6.4',quality:quality(),capture:captureSettings?{width:captureSettings.width,height:captureSettings.height,requestedFps:captureSettings.frameRate,surface:captureSettings.displaySurface}:null,peers:recentStats.map(p=>({path:p.path,protocol:p.protocol,rttMs:p.rttMs,availableMbps:p.availableMbps,videoCeilingMbps:p.videoCeilingMbps,videoTargetWidth:p.videoTargetWidth,videoTargetHeight:p.videoTargetHeight,videoTargetFps:p.videoTargetFps,audioReserveKbps:p.audioReserveKbps,videoBudgetReason:p.videoBudgetReason,media:p.media})),engine:desktopInfo?{electron:desktopInfo.electron,chrome:desktopInfo.chrome,gpu:desktopInfo.gpu}:null};
+    const report={version:desktopInfo?.version||'2.6.5',quality:quality(),capture:captureSettings?{width:captureSettings.width,height:captureSettings.height,requestedFps:captureSettings.frameRate,surface:captureSettings.displaySurface}:null,peers:recentStats.map(p=>({path:p.path,protocol:p.protocol,rttMs:p.rttMs,availableMbps:p.availableMbps,videoCeilingMbps:p.videoCeilingMbps,videoTargetWidth:p.videoTargetWidth,videoTargetHeight:p.videoTargetHeight,videoTargetFps:p.videoTargetFps,audioReserveKbps:p.audioReserveKbps,videoBudgetReason:p.videoBudgetReason,media:p.media})),engine:desktopInfo?{electron:desktopInfo.electron,chrome:desktopInfo.chrome,gpu:desktopInfo.gpu}:null};
     const text=JSON.stringify(report,null,2);if(native)await native.clipboard(text);else await navigator.clipboard.writeText(text);toast('视频诊断已复制（不含房间号、昵称或 IP 地址）。');
 });
 $('openShareLogs').onclick = () => run(() => native.shareLogs.open());

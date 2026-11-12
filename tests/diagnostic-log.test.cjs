@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { errorFields } = require('../public/diagnostics.js');
+const { clean, errorFields } = require('../public/diagnostics.js');
 const { DiagnosticLog } = require('../desktop/diagnostic-log.cjs');
 
 test('records the failed audio device and fallback without retaining private error text, including on export', async t => {
@@ -44,4 +44,15 @@ test('rotates diagnostics and exports only bounded recent files', async t => {
     assert.equal((await log.list()).length, 2);
     assert.deepEqual((await log.report({})).records.map(entry => entry.attempt), [7, 8]);
     assert.equal(await fs.readFile(path.join(directory, 'unrelated.jsonl'), 'utf8'), 'leave untouched');
+});
+
+test('voice diagnostics retain only bounded anonymous transport measurements', () => {
+    const row = clean({ area:'peer', event:'quality', attempt:2, voice:{
+        path:'P2P 直连', rttMs:27.345, receiveLossPct:2, concealedSamples:960,
+        sendLossPct:101, jitterBufferMs:Infinity, name:'private-contact', ip:'192.0.2.1',
+    } });
+    assert.deepEqual(row, { area:'peer', event:'quality', attempt:2,
+        voice:{path:'P2P 直连', rttMs:27.35, receiveLossPct:2, concealedSamples:960} });
+    assert.equal(errorFields(new Error('对方未能进入房间')).reason, 'remote-room-failed');
+    assert.equal(errorFields(new Error('对方取消了呼叫')).reason, 'cancelled');
 });

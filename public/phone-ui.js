@@ -41,7 +41,7 @@ function renderPhone() {
         const status=document.createElement('small');status.textContent=phone.online(contact.id)?'在线':'离线';label.append(title,status);
         const dial=document.createElement('button');dial.textContent='呼叫';dial.title='呼叫 '+contact.name;
         dial.disabled=!phone.online(contact.id)||!!phone.pending;
-        dial.onclick=()=>run(()=>phone.dial(contact.id));
+        dial.onclick=()=>run(()=>phone.dial(contact.id),'phone');
         const remove=document.createElement('button');remove.textContent='×';remove.title='移除 '+contact.name;remove.className='phone-remove';
         remove.disabled=!!phone.pending;remove.onclick=()=>run(()=>phone.remove(contact.id));
         row.append(label,dial,remove);$('phoneContacts').append(row);
@@ -57,7 +57,9 @@ function renderPhone() {
     }
     const incoming=pending.phase==='incoming';
     $('phoneCallTitle').textContent=incoming?pending.friend.name+' 正在呼叫你':pending.phase==='outgoing'?'正在呼叫 '+pending.friend.name:'正在连接通话…';
-    $('phoneCallText').textContent=incoming?(pending.unknown?'这是新联系人。添加并接听后，对方会保存在你的联系人中。':'接听后自动进入同一个房间并开启语音。'):pending.phase==='outgoing'?'等待对方接听…':'正在加入房间，请稍候。';
+    $('phoneCallText').textContent=incoming?(pending.unknown?'这是新联系人。添加并接听后，对方会保存在你的联系人中。':'接听后自动进入同一个房间并开启语音。')
+        :pending.phase==='outgoing'?'等待对方接听…'
+        :pending.phase==='waiting'?'你已进房，正在等待对方加入…':'正在加入房间，请稍候。';
     $('phoneAccept').hidden=!incoming;$('phoneAccept').textContent=pending.unknown?'添加并接听':'接听';
     $('phoneCancel').textContent=incoming?'拒绝':'取消';
     if(!$('phoneCallDialog').open)$('phoneCallDialog').showModal();
@@ -118,9 +120,9 @@ function phoneConnected(){
 $('phoneAdd').onclick=()=>{$('contactCode').value='';$('contactAlias').value='';$('phoneAddDialog').showModal();};
 $('contactForm').onsubmit=event=>{event.preventDefault();run(async()=>{await phoneController.add($('contactCode').value,$('contactAlias').value);$('phoneAddDialog').close();toast('联系人已保存。在线时可以呼叫，对方首次接听会把你添加为联系人。');});};
 $('phoneCopy').onclick=()=>run(async()=>{await native.clipboard(phoneController.code());toast('好友码已复制，发给朋友添加一次即可。');});
-$('phoneAccept').onclick=()=>run(()=>phoneController.accept());
-$('phoneCancel').onclick=()=>run(()=>phoneController.cancel());
-$('phoneCallDialog').addEventListener('cancel',event=>{event.preventDefault();run(()=>phoneController.cancel());});
+$('phoneAccept').onclick=()=>run(()=>phoneController.accept(),'phone');
+$('phoneCancel').onclick=()=>run(()=>phoneController.cancel(),'phone');
+$('phoneCallDialog').addEventListener('cancel',event=>{event.preventDefault();run(()=>phoneController.cancel(),'phone');});
 window.addEventListener('pagehide',()=>{stopPhoneTone();phoneController?.stop();});
 
 async function startPhone() {

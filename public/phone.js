@@ -148,8 +148,13 @@
             const room=context.room || 'friends-' + crypto.randomUUID();
             const pending={id:crypto.randomUUID(),friend,room,phase:'outgoing',transport:{room:inboxRoom(friend),peer}};
             this.setPending(pending);
-            try { await this.send(friend,pending.transport,'invite',pending.id,room,{code:this.code(),inRoom:!!context.room}); }
-            catch(error) {this.abort('呼叫发送失败');throw error;}
+            try {
+                const sent=await this.send(friend,pending.transport,'invite',pending.id,room,{code:this.code(),inRoom:!!context.room});
+                if(!sent)throw new Error('呼叫信令已断开');
+            } catch(error) {
+                if(this.pending===pending)this.abort();
+                throw error;
+            }
         }
         async receive(config) {
             if (config?.action!=='friends-phone-v1' || !this.rooms.has(config.data?.room_id)) return;
@@ -185,14 +190,19 @@
             }
             if (body.kind==='accepted' && pending.phase==='outgoing') {
                 const context=this.context();
-                if (context.room && context.room!==body.room) {await this.cancel('当前正在其他房间通话');return;}
+                if (context.room && context.room!==body.room) {
+                    this.abort('当前正在其他房间通话');
+                    await this.send(candidate,transport,'busy',pending.id,body.room);
+                    return;
+                }
                 pending.phase='connecting';pending.room=body.room;this.emit('state');
                 try {
                     await this.join(body.room,pending.controller.signal);
                     if (this.pending!==pending) return;
-                    await this.send(candidate,transport,'joined',pending.id,body.room);
+                    if(!await this.send(candidate,transport,'joined',pending.id,body.room))throw new Error('呼叫信令已断开');
+                    if (this.pending!==pending) return;
                     this.clear(pending);this.emit('connected',{friend:candidate,room:body.room});
-                } catch(error) { if(this.pending===pending)await this.cancel(error.message||'进入房间失败，请重试'); }
+                } catch(error) { await this.failJoin(pending,transport,error); }
             } else if (body.kind==='joined' && pending.phase==='waiting' && body.room===pending.room) {
                 this.clear(pending);this.emit('connected',{friend:candidate,room:body.room});
             }
@@ -211,8 +221,13 @@
                 await this.join(pending.room,pending.controller.signal);
                 if (this.pending!==pending) return;
                 pending.phase='waiting';this.emit('state');
-                await this.send(pending.friend,pending.transport,'accepted',pending.id,pending.room);
-            } catch(error) { if(this.pending===pending)await this.cancel(error.message||'进入房间失败，请重试'); }
+                if(!await this.send(pending.friend,pending.transport,'accepted',pending.id,pending.room))throw new Error('呼叫信令已断开');
+            } catch(error) { await this.failJoin(pending,pending.transport,error); }
+        }
+        async failJoin(pending,transport,error) {
+            if(this.pending!==pending)return;
+            this.abort(error?.message||'进入房间失败，请重试');
+            await this.send(pending.friend,transport,'failed',pending.id,pending.room);
         }
         async cancel(message) {
             const pending=this.pending;
