@@ -34,7 +34,7 @@ if(Test-Path -LiteralPath $nativePath){
     try{$nativeProbe=[IO.File]::Open($nativePath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$nativeProbe.Dispose()}
     catch{throw 'The collaboration component is still running or locked. Close Friends completely before updating; no files were changed.'}
 }
-$backupRoot=Join-Path $targetRoot ('.rollback\before-2.6.5-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+$backupRoot=Join-Path $targetRoot ('.rollback\before-2.6.6-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
 foreach($entry in $manifest.files){
     $relative=$entry.path.Replace('/',[IO.Path]::DirectorySeparatorChar)
     $source=[IO.Path]::GetFullPath((Join-Path $payloadRoot $relative))
@@ -50,6 +50,6 @@ foreach($entry in $manifest.files){
     Copy-Item -LiteralPath $source -Destination $destination -Force
     if((Read-UpdateHash $destination) -ne $entry.sha256){throw ('Copied file checksum mismatch: '+$relative)}
 }
-Write-Host 'Updated to Friends 2.6.5. Existing voice settings and the runtime were preserved.'
+Write-Host 'Updated to Friends 2.6.6. Existing voice settings and the runtime were preserved.'
 Write-Host ('Rollback: '+$backupRoot)
 if(-not $NoLaunch){& (Join-Path $targetRoot 'Start-Friends.ps1')}

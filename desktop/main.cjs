@@ -1,5 +1,5 @@
 'use strict';
-const {app,BrowserWindow,session,ipcMain,desktopCapturer,globalShortcut,clipboard,dialog,shell,screen,Notification,net} = require('electron');
+const {app,BrowserWindow,session,ipcMain,desktopCapturer,globalShortcut,clipboard,dialog,shell,screen,Notification,net,Menu,Tray} = require('electron');
 const path = require('node:path'), fs = require('node:fs');
 const {roomFromArgs}=require('./links.cjs');
 const { ShareLogs } = require('./share-logs.cjs');
@@ -22,7 +22,7 @@ fs.mkdirSync(app.getPath('userData'),{recursive:true});
 app.setPath('sessionData',app.getPath('userData'));
 const primaryInstance=fixture||fileDiagnostics||multiDiagnostics||videoDiagnostics||uiDiagnostics||phoneDiagnostics||app.requestSingleInstanceLock();
 if (!primaryInstance) { app.quit(); }
-let mainWindow, server, selection = null, testSurface,remoteBridge;
+let mainWindow, server, selection = null, testSurface,remoteBridge, tray;
 const diagnosticLog = new DiagnosticLog(path.join(__dirname, '..', '.run', 'diagnostics'), app.getVersion());
 const recordDiagnostic = record => diagnosticLog.write(record).catch(error => console.warn('Diagnostic write failed', error.code));
 const miniWindow = require('./mini-window.cjs')(() => mainWindow, screen);
@@ -37,9 +37,15 @@ function createWindow(url,title='同屏') {
     win.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith(ORIGIN+'/'))event.preventDefault();});
     win.loadURL(url); return win;
 }
-app.on('second-instance',(event,argv)=>{const room=roomFromArgs(argv);if(room){launchRoom=room;if(mainWindow){if(mainWindow.webContents.isLoading())mainWindow.webContents.once('did-finish-load',()=>mainWindow?.webContents.send('desktop:invite',room));else mainWindow.webContents.send('desktop:invite',room);}}mainWindow?.show();mainWindow?.focus();});
+function showMainWindow() {
+    if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+}
+app.on('second-instance',(event,argv)=>{const room=roomFromArgs(argv);if(room){launchRoom=room;if(mainWindow){if(mainWindow.webContents.isLoading())mainWindow.webContents.once('did-finish-load',()=>mainWindow?.webContents.send('desktop:invite',room));else mainWindow.webContents.send('desktop:invite',room);}}showMainWindow();});
 app.on('window-all-closed',()=>app.quit());
-app.on('will-quit',()=>{globalShortcut.unregisterAll();server?.close();});
+app.on('will-quit',()=>{tray?.destroy();globalShortcut.unregisterAll();server?.close();});
 app.whenReady().then(async()=>{
     if(!primaryInstance)return;
     if(fixture){mainWindow=createWindow(ORIGIN+'/audio-fixture.html','同屏外部音频测试进程');setTimeout(()=>app.quit(),180000);return;}
@@ -119,13 +125,13 @@ app.whenReady().then(async()=>{
         return sources.filter(s=>!s.name.startsWith('同屏') || s.name==='同屏音频测试源').map(s=>({id:s.id,name:s.name,type:s.id.startsWith('screen:')?'screen':'window',thumbnail:s.thumbnail.toDataURL()}));
     }));
     ipcMain.handle('desktop:select',guarded((event,id,audio)=>{if(typeof id!=='string'||!/^screen:|^window:/.test(id))throw new Error('请选择共享来源');selection={id,audio:audio===true,at:Date.now()};return true;}));
-    ipcMain.handle('desktop:window',guarded((event,action)=>{if(action==='minimize')mainWindow.minimize();else if(action==='maximize')mainWindow.isMaximized()?mainWindow.unmaximize():mainWindow.maximize();else if(action==='close'){if(miniWindow.active)miniWindow.set(false);else mainWindow.close();}}));
+    ipcMain.handle('desktop:window',guarded((event,action)=>{if(action==='minimize')mainWindow.minimize();else if(action==='maximize')mainWindow.isMaximized()?mainWindow.unmaximize():mainWindow.maximize();else if(action==='close')mainWindow.close();}));
     ipcMain.handle('desktop:mini', guarded((event, enabled) => miniWindow.set(enabled === true)));
     ipcMain.handle('desktop:call-alert', guarded((event, ringing, name) => {
         mainWindow.flashFrame(ringing === true);
         if (ringing === true && !mainWindow.isFocused() && typeof name === 'string' && Notification.isSupported()) {
             const notice = new Notification({ title:'同屏来电', body:name.slice(0,32)+' 正在呼叫你', silent:true });
-            notice.on('click',()=>{mainWindow.show();if(mainWindow.isMinimized())mainWindow.restore();mainWindow.focus();});
+            notice.on('click',showMainWindow);
             notice.show();
         }
     }));
@@ -163,8 +169,29 @@ app.whenReady().then(async()=>{
     mainWindow=createWindow(ORIGIN+(phoneDiagnostics?'/phone-test.html':uiDiagnostics?'/ui-test.html'+(roomDiagnostics?'?roomDiagnostics=1':process.argv.includes('--ui-phase2')?'?phase=2':''):multiDiagnostics?'/multi-test.html'+(process.argv.includes('--public-signal')?'?public=1':''):fileDiagnostics?'/file-test.html':videoDiagnostics?'/video-test.html?autorun=1'+(inspectVideoSettings?'&prefs=1':'')+(process.argv.includes('--video-720')?'&q=720':''):diagnostics||autoDiagnostics?'/native-test.html'+(autoDiagnostics?'?autorun=1':''):launchRoom?'/?room='+encodeURIComponent(launchRoom)+'&invite=1':'/'));
     mainWindow.on('leave-full-screen',()=>mainWindow?.webContents.send('desktop:fullscreen-changed',false));
     mainWindow.on('close', event => {
-        if (miniWindow.active && !quitting) { event.preventDefault(); miniWindow.set(false); }
+        if (quitting) return;
+        const hideToTray = tray && !tray.isDestroyed();
+        if (!hideToTray && !miniWindow.active) return;
+        event.preventDefault();
+        if (miniWindow.active) miniWindow.set(false);
+        if (hideToTray) mainWindow.hide();
     });
+    if (!diagnostics && !autoDiagnostics && !videoDiagnostics && !fileDiagnostics && !multiDiagnostics && !uiDiagnostics && !phoneDiagnostics) {
+        try {
+            tray = new Tray(path.join(__dirname, 'tray.ico'));
+            tray.setToolTip('同屏');
+            tray.on('click', showMainWindow);
+            tray.setContextMenu(Menu.buildFromTemplate([
+                { label: '打开同屏', click: showMainWindow },
+                { type: 'separator' },
+                { label: '退出同屏', click: () => app.quit() },
+            ]));
+        } catch (error) {
+            tray?.destroy();
+            tray = undefined;
+            console.warn('Could not create tray icon', error);
+        }
+    }
     mainWindow.webContents.on('did-navigate', () => { void shareLogs.finishAll('navigation'); });
     mainWindow.webContents.on('did-fail-load', (event,code,message,url,mainFrame) => {
         if(mainFrame&&code!==-3)void recordDiagnostic({area:'renderer',event:'error',exitCode:code});
