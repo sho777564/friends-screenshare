@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),path=require('node:path'),{spawn}=require('node:child_process'),{EventEmitter}=require('node:events');
-const exe=path.join(__dirname,'../native/CoopInput.exe');
+const exe=path.join(__dirname,'../native/CoopInputHost.exe');
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 class NativeSession{
     constructor(args=['--ipc-test']){this.events=[];this.buffer='';this.waiters=[];this.exit=null;this.stderr='';this.proc=spawn(exe,args,{windowsHide:true,stdio:['pipe','pipe','pipe']});this.attach();}
@@ -45,10 +45,14 @@ async function runBridgeChecks(check,sessions){
     try{
         bridge.share({id:'screen:0:0',display_id:'42'});const grant=await invoke('remote:grant','p','同学😀');check('Production Electron IPC bridge completes Chinese grant handshake',typeof grant.token==='string'&&hotkeys.size===1);
         assert(await invoke('remote:input',grant.token,1,{type:'button',x:.3,y:.4,button:0,action:'down'}));assert(await invoke('remote:input',grant.token,2,{type:'button',x:.3,y:.4,button:0,action:'up'}));assert(await invoke('remote:input',grant.token,3,{type:'key',vk:65,action:'down'}));let state=await processes[0].probe('bridge-holding');check('Granted IPC token reaches real native pipe',state.heldKeys===1);
-        await invoke('remote:stop');state=await processes[0].probe('bridge-stopped');check('Revocation releases native keys and unregisters emergency hotkey',state.heldKeys===0&&!state.active&&hotkeys.size===0);
-        const again=await invoke('remote:grant','p','朋友甲');check('Bridge reuses reader after normal revocation',!!again.token&&processes.length===1);
-        processes[0].proc.stdin.end();await processes[0].until(()=>processes[0].exit);await wait(30);check('Child exit revokes token immediately',!await invoke('remote:input',again.token,2,{type:'ping'}));
-        const fresh=await invoke('remote:grant','p','我');check('Bridge can restart helper after EOF',!!fresh.token&&processes.length===2);
+        await invoke('remote:stop', 'p');
+        check('Stopping the last controller releases the native process and hotkey',processes[0].exit?.code===0&&hotkeys.size===0);
+        const again=await invoke('remote:grant','p','朋友甲');
+        check('A later grant starts a fresh helper',!!again.token&&processes.length===2);
+        processes[1].proc.stdin.end();await processes[1].until(()=>processes[1].exit);await wait(30);check('Child exit revokes token immediately',!await invoke('remote:input',again.token,2,{type:'ping'}));
+        const fresh=await invoke('remote:grant','p','我');check('Bridge can restart helper after EOF',!!fresh.token&&processes.length===3);
+        await bridge.stopAll('quit');
+        check('Quit waits for the last helper to exit',processes[2].exit?.code===0&&hotkeys.size===0);
     }finally{app.emit('before-quit');}
 }
 async function runGroupBridgeChecks(check,sessions){

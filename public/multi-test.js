@@ -93,6 +93,13 @@ async function run(){const clients=[],managers=[],remotes=[],tracks=[],timers=[]
   await remotes[0].stopHost(ids[1]);await until(()=>!remotes[1].control,'individual revoke');check('Revoking one member preserves the other controller',!!remotes[2].control&&remotes[0].hosts.size===1&&granted.has(ids[2]));
   for(let i=0;i<3;i++)clients[i].removePeer(ids[3]);clients[3].resetPeers();await until(()=>clients.slice(0,3).every(c=>c.peers.size===2),'fourth leaves');clients[0].sendData({type:'chat',text:'after leave'});await until(()=>messages[1].includes('after leave')&&messages[2].includes('after leave'),'chat after leave');remotes[2].sendInput({type:'move',x:.4,y:.4});await until(()=>inputs.length===3,'controller after unrelated leave');
   await sleep(200);check('Three remaining members retain media, chat and collaboration after fourth leaves',clients.slice(0,3).every(c=>[...c.peers.values()].every(p=>p.pc.connectionState==='connected'))&&!!remotes[2].control);
+  let remainingCursors;
+  remotes[1].addEventListener('cursors',e=>remainingCursors=e.detail.cursors);
+  hostEvents({type:'cursor',x:.5,y:.5,participants:[{id:ids[2],name:'同学丙',color:'#bf8bff',x:.4,y:.4}]});
+  await until(()=>remainingCursors?.length===2,'final controller overlay');
+  await remotes[2].stopControl();
+  await until(()=>!granted.size&&remainingCursors?.length===0,'final controller stop cleanup');
+  check('Controller initiated stop clears the host grant and all viewer overlays',!remotes[0].hosts.size&&!remotes[2].control);
   check('No media or signaling errors',errors.length===0,{errors});report.passed=true;
  }catch(error){report.passed=false;report.error=error.stack;}
  finally{for(const r of remotes)await r.close();for(const m of managers)await m.close();for(const c of clients){if(publicSignal)c.leave();else c.resetPeers();}tracks.forEach(t=>t.stop());timers.forEach(clearInterval);await ctx?.close();report.finished=new Date().toISOString();$('results').textContent=JSON.stringify(report,null,2);$('progress').textContent=report.passed?'全部通过':'测试失败';await window.friendsDesktop.saveTest(report);}

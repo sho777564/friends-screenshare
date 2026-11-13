@@ -95,7 +95,11 @@ app.whenReady().then(async()=>{
         if (closingLogs) return;
         event.preventDefault();
         closingLogs = true;
-        void Promise.allSettled([shareLogs.finishAll('app-quit'),recordDiagnostic({area:'application',event:'stop'})]).then(() => app.quit());
+        void Promise.allSettled([
+            remoteBridge?.stopAll('quit'),
+            shareLogs.finishAll('app-quit'),
+            recordDiagnostic({area:'application',event:'stop'}),
+        ]).then(() => app.quit());
     });
     const audioHotkeys=enabled=>{if(fileDiagnostics||multiDiagnostics||videoDiagnostics||uiDiagnostics||phoneDiagnostics)return;for(const [key,action] of [['CommandOrControl+Shift+M','mic'],['CommandOrControl+Shift+D','deafen']]){globalShortcut.unregister(key);if(enabled)globalShortcut.register(key,()=>mainWindow?.webContents.send('desktop:shortcut',action));}};
     remoteBridge=require('./remote-ipc.cjs')({ipcMain,guarded,dialog,screen,app,globalShortcut,window:()=>mainWindow,audioHotkeys});

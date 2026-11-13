@@ -2,6 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {RemoteGate,validInput}=require('../desktop/remote-gate.cjs');
 const {Remote,point,keyCode}=require('../public/remote.js');
+const {Conference}=require('../public/media.js');
 test('control needs a shared full screen, a live token and increasing sequence',()=>{
  let now=0;const g=new RemoteGate(()=>now);assert.throws(()=>g.grant('peer'));g.setShare({id:'window:1:0'});assert.throws(()=>g.grant('peer'));
  g.setShare({id:'screen:0:0'});const token=g.grant('peer');assert(!g.accept('wrong',1,{type:'ping'}));assert(g.accept(token,1,{type:'move',x:.3,y:.6}));assert(!g.accept(token,1,{type:'key',vk:65,action:'down'}));
@@ -28,4 +29,14 @@ test('unsolicited input or grant never controls native input; approved session s
 });
 test('declining a session never invokes native grant',async()=>{
  const c=new FakeCall();let grants=0;const r=new Remote(c,{onEvent(){},grant:async()=>{grants++;},stop:async()=>{}});c.receive({action:'request',id:crypto.randomUUID()});await tick();r.deny();assert.equal(grants,0);assert.equal(c.sent.at(-1).payload.action,'denied');await r.close();
+});
+test('stop and cursor cleanup are queued when pointer updates are throttled',()=>{
+ const conference=new Conference({socketFactory:()=>{}});
+ const sent=[];
+ const channel={readyState:'open',bufferedAmount:17000,send:value=>sent.push(JSON.parse(value).payload)};
+ conference.peers.set('p',{channel});
+ assert.equal(conference.sendControl('p',{action:'input',input:{type:'move'}}),false);
+ assert.equal(conference.sendControl('p',{action:'stop',id:'call'}),true);
+ assert.equal(conference.sendControl('p',{action:'pointers',cursors:[]}),true);
+ assert.deepEqual(sent,[{action:'stop',id:'call'},{action:'pointers',cursors:[]}]);
 });

@@ -29,12 +29,12 @@ $targetRoot=[IO.Path]::GetFullPath($Target).TrimEnd('\')
 $runtimePath=Join-Path $targetRoot 'runtime\electron.exe'
 $running=Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object {$_.ExecutablePath -eq $runtimePath}
 if($running){throw 'Please close Friends completely, then run this updater again. Your call was left untouched.'}
-$nativePath=Join-Path $targetRoot 'native\CoopInput.exe'
+$nativePath=Join-Path $targetRoot 'native\CoopInputHost.exe'
 if(Test-Path -LiteralPath $nativePath){
     try{$nativeProbe=[IO.File]::Open($nativePath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$nativeProbe.Dispose()}
     catch{throw 'The collaboration component is still running or locked. Close Friends completely before updating; no files were changed.'}
 }
-$backupRoot=Join-Path $targetRoot ('.rollback\before-2.6.6-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+$backupRoot=Join-Path $targetRoot ('.rollback\before-2.6.7-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
 foreach($entry in $manifest.files){
     $relative=$entry.path.Replace('/',[IO.Path]::DirectorySeparatorChar)
     $source=[IO.Path]::GetFullPath((Join-Path $payloadRoot $relative))
@@ -50,6 +50,6 @@ foreach($entry in $manifest.files){
     Copy-Item -LiteralPath $source -Destination $destination -Force
     if((Read-UpdateHash $destination) -ne $entry.sha256){throw ('Copied file checksum mismatch: '+$relative)}
 }
-Write-Host 'Updated to Friends 2.6.6. Existing voice settings and the runtime were preserved.'
+Write-Host 'Updated to Friends 2.6.7. Existing voice settings and the runtime were preserved.'
 Write-Host ('Rollback: '+$backupRoot)
 if(-not $NoLaunch){& (Join-Path $targetRoot 'Start-Friends.ps1')}

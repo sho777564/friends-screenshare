@@ -9,11 +9,21 @@
         constructor(call,native){super();this.call=call;this.native=native;this.hosts=new Map();this.requests=new Map();this.control=null;this.requested=null;this.authorizing=null;this.authorizeCancelled=false;
             call.addEventListener('data',e=>{if(e.detail.data.type==='control')this.receive(e.detail).catch(error=>this.emit('error',{message:error.message}));});
             call.addEventListener('peerleft',e=>this.removePeer(e.detail.id));native?.onEvent(e=>this.nativeEvent(e));
-            this.timer=setInterval(()=>{if(this.control){if(Date.now()-this.control.lastHost>6500)this.stopControl('host-timeout');else this.sendInput({type:'ping'});}},1000);
+            this.pointerUpdates=new Map();
+            this.timer=setInterval(()=>{
+                const now=Date.now();
+                if(this.control){if(now-this.control.lastHost>6500)this.stopControl('host-timeout');else this.sendInput({type:'ping'});}
+                for(const [peer,at] of this.pointerUpdates)if(now-at>6500)this.showCursors(peer,[]);
+            },1000);
         }
         get host(){return this.hosts.values().next().value||null;}
         get pending(){return this.requests.values().next().value||null;}
         emit(type,detail={}){this.dispatchEvent(new CustomEvent(type,{detail}));}
+        showCursors(peer,cursors,ownerPeer=null){
+            if(cursors.length)this.pointerUpdates.set(peer,Date.now());
+            else this.pointerUpdates.delete(peer);
+            this.emit('cursors',{peer,cursors,ownerPeer});
+        }
         send(peer,payload){return this.call.sendControl(peer,{v:2,...payload});}
         request(peer){if(this.hosts.size||this.control||this.requested||this.requests.size||this.authorizing)throw new Error('请先结束当前协作或处理请求');
             const id=crypto.randomUUID();if(!this.send(peer,{action:'request',id}))throw new Error('请等待对方连接成功');this.requested={peer,id};this.emit('state');clearTimeout(this.requestTimer);
@@ -48,7 +58,7 @@
             }
             if(m.action==='pointers'&&validCursors(m.cursors)){
                 if(this.control?.peer===peer){if(this.control.actor&&!m.cursors.some(c=>c.id===this.control.actor)){await this.stopControl('permission-removed',false);}else this.control.lastHost=Date.now();}
-                this.emit('cursors',{peer,cursors:m.cursors,ownerPeer:m.ownerPeer});return;
+                this.showCursors(peer,m.cursors,m.ownerPeer);return;
             }
             if(m.action==='busy'&&this.control?.peer===peer&&m.id===this.control.id)this.emit('busy',m);
         }
@@ -63,12 +73,13 @@
             }else if(['busy','blocked'].includes(m.type)){const list=m.peer?[this.hosts.get(m.peer)].filter(Boolean):[...this.hosts.values()];for(const h of list)this.send(h.peer,{action:'busy',id:h.id,reason:m.type==='blocked'?'protected':m.reason,ownerPeer:m.ownerPeer});}
         }
         async stopHost(peer,reason='revoked',notify=true){const h=this.hosts.get(peer);if(!h)return;this.hosts.delete(peer);if(notify)this.send(peer,{action:'stop',id:h.id});await this.native?.stop(peer);this.emit('state',{reason});}
-        async stopControl(reason='stopped',notify=true){const c=this.control;this.control=null;if(c&&notify)this.send(c.peer,{action:'stop',id:c.id});this.emit('state',{reason});}
-        async removePeer(peer){if(this.hosts.has(peer))await this.stopHost(peer,'peer-left',false);this.requests.delete(peer);
+        async stopControl(reason='stopped',notify=true){const c=this.control;this.control=null;if(c){this.showCursors(c.peer,[]);if(notify)this.send(c.peer,{action:'stop',id:c.id});}this.emit('state',{reason});}
+        async removePeer(peer){this.pointerUpdates.delete(peer);if(this.hosts.has(peer))await this.stopHost(peer,'peer-left',false);this.requests.delete(peer);
             if(this.authorizing?.peer===peer){this.authorizeCancelled=true;await this.native?.stop(peer);}
             if(this.control?.peer===peer)await this.stopControl('peer-left',false);if(this.requested?.peer===peer){clearTimeout(this.requestTimer);this.requested=null;}this.emit('state');
         }
         async stop(reason='stopped',notify=true){const list=[...this.hosts.values(),...this.requests.values(),this.control,this.requested,this.authorizing].filter(Boolean);this.hosts.clear();this.requests.clear();this.control=null;this.requested=null;this.authorizeCancelled=true;clearTimeout(this.requestTimer);
+            for(const peer of this.pointerUpdates.keys())this.showCursors(peer,[]);
             if(notify)for(const p of list)this.send(p.peer,{action:'stop',id:p.id});await this.native?.stop();this.emit('state',{reason});
         }
         async close(){clearInterval(this.timer);await this.stop();}

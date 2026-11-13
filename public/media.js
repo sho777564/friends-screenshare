@@ -419,7 +419,15 @@
             const value=JSON.stringify(data);if(value.length>10000)throw new Error('消息过长');
             let sent=false;for(const p of this.peers.values())if(p.channel?.readyState==='open'){p.channel.send(value);sent=true;}return sent;
         }
-        sendControl(peer,payload){const c=this.peers.get(peer)?.channel;if(c?.readyState!=='open'||c.bufferedAmount>16384)return false;const value=JSON.stringify({type:'control',payload});if(value.length>2000)return false;c.send(value);return true;}
+        sendControl(peer,payload){
+            const channel=this.peers.get(peer)?.channel;
+            if(channel?.readyState!=='open')return false;
+            const stopping=payload.action==='stop'||(payload.action==='pointers'&&payload.cursors?.length===0);
+            if(channel.bufferedAmount>16384&&!stopping)return false;
+            const value=JSON.stringify({type:'control',payload});
+            if(value.length>2000)return false;
+            try{channel.send(value);return true;}catch{return false;}
+        }
         openFileChannel(peer,id){
             const p=this.peers.get(peer);if(!p||p.pc.connectionState!=='connected')throw new Error('请等朋友连接成功后再发送文件');
             if(!/^[a-f0-9-]{36}$/.test(id))throw new Error('无效的文件编号');

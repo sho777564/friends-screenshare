@@ -46,7 +46,13 @@ class CoopInput:Form {
     static long Now(){return (long)(System.Diagnostics.Stopwatch.GetTimestamp()*1000.0/System.Diagnostics.Stopwatch.Frequency);}
     static double Num(Dictionary<string,object> m,string k){return Convert.ToDouble(m[k]);}
     static string Field(Dictionary<string,object> m,string k){return Convert.ToString(m[k]);}
-    static void Emit(object o){lock(Json){events.WriteLine(Json.Serialize(o));events.Flush();}}
+    static void Emit(object o){
+        lock(Json){
+            try{events.WriteLine(Json.Serialize(o));events.Flush();}
+            catch(IOException){}
+            catch(ObjectDisposedException){}
+        }
+    }
     static void ConfigureTransport(){commands=new StreamReader(Console.OpenStandardInput(),new UTF8Encoding(false,true),false,4096);events=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false),4096){AutoFlush=true};}
     protected override bool ShowWithoutActivation{get{return true;}}
     protected override CreateParams CreateParams{get{var p=base.CreateParams;p.ExStyle|=0x80000|0x20|0x80|0x08000000;return p;}}
@@ -76,7 +82,7 @@ class CoopInput:Form {
         }}catch(DecoderFallbackException){endReason="invalid-utf8";Emit(new {type="transport-error",reason=endReason});}
         catch(IOException){endReason="pipe-read-failed";Emit(new {type="transport-error",reason=endReason});}
         catch{endReason="reader-failed";Emit(new {type="transport-error",reason=endReason});}
-        try{BeginInvoke((Action)(()=>{Stop(endReason);Close();}));}catch{}
+        try{BeginInvoke((Action)(()=>{try{Stop(endReason);}finally{Close();}}));}catch{}
     }
     void Command(Dictionary<string,object> m){string type=Field(m,"type"),request=m.ContainsKey("request")?Field(m,"request"):null;
         if(type=="probe"&&testing){var names=new List<string>();var colors=new List<string>();foreach(var c in collaborators){names.Add(c.name);colors.Add(ColorTranslator.ToHtml(c.color));}Emit(new {type="probe",value=m.ContainsKey("value")?m["value"]:null,active=active,heldKeys=keys.Count,heldButtons=buttons.Count,inputEvents=testInputs.Count,pointerCount=collaborators.Count,names=names,colors=colors});return;}
@@ -134,7 +140,12 @@ class CoopInput:Form {
     static void MouseButton(int b,bool down){uint[] d={2,0x20,8},u={4,0x40,0x10};Mouse(down?d[b]:u[b],0);}
     static void Mouse(uint flags,uint value,int x=0,int y=0){if(testing){testInputs.Add("mouse:"+flags);return;}var input=new INPUT{type=0,data=new UNION{mouse=new MOUSEINPUT{dx=x,dy=y,flags=flags,mouseData=value}}};if(SendInput(1,new[]{input},Marshal.SizeOf(typeof(INPUT)))!=1)Emit(new {type="blocked"});}
     static void Key(int vk,bool down){if(testing){testInputs.Add("key:"+vk+":"+down);return;}uint flags=down?0u:2u;if(vk>=33&&vk<=46||vk==163||vk==165||vk==111)flags|=1;var input=new INPUT{type=1,data=new UNION{key=new KEYINPUT{vk=(ushort)vk,flags=flags}}};if(SendInput(1,new[]{input},Marshal.SizeOf(typeof(INPUT)))!=1)Emit(new {type="blocked"});}
-    protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);if(!active)return;DrawPointer(e.Graphics,local,Color.FromArgb(49,213,231),localName);if(collaborators.Count==0)DrawPointer(e.Graphics,remote,Color.FromArgb(255,172,66),remoteName);else foreach(var p in collaborators)DrawPointer(e.Graphics,new POINT(desktop.Left+(int)(p.x*(desktop.Width-1)),desktop.Top+(int)(p.y*(desktop.Height-1))),p.color,p.name);}
+    protected override void OnPaint(PaintEventArgs e){
+        base.OnPaint(e);
+        if(!active||collaborators.Count==0)return;
+        DrawPointer(e.Graphics,local,Color.FromArgb(49,213,231),localName);
+        foreach(var p in collaborators)DrawPointer(e.Graphics,new POINT(desktop.Left+(int)(p.x*(desktop.Width-1)),desktop.Top+(int)(p.y*(desktop.Height-1))),p.color,p.name);
+    }
     void DrawPointer(Graphics g,POINT p,Color color,string label){int x=p.x-desktop.Left,y=p.y-desktop.Top;var pts=new[]{new Point(x,y),new Point(x+5,y+23),new Point(x+10,y+16),new Point(x+22,y+15)};using(var brush=new SolidBrush(color))using(var border=new Pen(Color.Black,2)){g.FillPolygon(brush,pts);g.DrawPolygon(border,pts);var text=label.Length>18?label.Substring(0,18):label;var size=g.MeasureString(text,Font);g.FillRectangle(Brushes.Black,x+18,y+20,size.Width+6,size.Height+4);g.DrawString(text,Font,brush,x+21,y+22);}}
     [STAThread]static void Main(string[] args){
         ConfigureTransport();
