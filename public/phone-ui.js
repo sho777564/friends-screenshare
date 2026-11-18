@@ -30,21 +30,24 @@ async function startPhoneTone(incoming) {
 }
 function renderPhone() {
     const phone=phoneController;
-    $('phoneStatus').textContent=!phone?'正在准备呼叫…':phone.connected?'待机已连接':'呼叫信令重连中';
+    $('phoneStatus').textContent=!phone?'正在连接来电服务…':phone.connected?'来电服务已连接':'来电服务重新连接中';
+    $('phoneStatus').classList.toggle('online',!!phone?.connected);
     $('phoneContacts').replaceChildren();
     $('phoneAdd').disabled=!phone;$('phoneCopy').disabled=!phone;
     if(!phone)return;
     if(!phone.contacts.size){const hint=document.createElement('p');hint.className='phone-hint';hint.textContent='添加朋友的好友码，以后点名字旁的呼叫即可。';$('phoneContacts').append(hint);}
     for(const contact of phone.contacts.values()) {
-        const row=document.createElement('div');row.className='phone-contact';
+        const row=document.createElement('div');row.className='phone-contact';row.classList.toggle('online',phone.online(contact.id));
+        const avatar=makeAvatar(contact.name);avatar.setAttribute('aria-hidden','true');
         const label=document.createElement('div');const title=document.createElement('strong');title.textContent=contact.name;
         const status=document.createElement('small');status.textContent=phone.online(contact.id)?'在线':'离线';label.append(title,status);
         const dial=document.createElement('button');dial.textContent='呼叫';dial.title='呼叫 '+contact.name;
         dial.disabled=!phone.online(contact.id)||!!phone.pending;
         dial.onclick=()=>run(()=>phone.dial(contact.id),'phone');
         const remove=document.createElement('button');remove.textContent='×';remove.title='移除 '+contact.name;remove.className='phone-remove';
+        remove.setAttribute('aria-label',remove.title);dial.setAttribute('aria-label',dial.title);
         remove.disabled=!!phone.pending;remove.onclick=()=>run(()=>phone.remove(contact.id));
-        row.append(label,dial,remove);$('phoneContacts').append(row);
+        row.append(avatar,label,dial,remove);$('phoneContacts').append(row);
     }
     const pending=phone.pending;
     const phase=pending?.phase||'idle';
@@ -56,6 +59,7 @@ function renderPhone() {
         return;
     }
     const incoming=pending.phase==='incoming';
+    $('phoneCallAvatar').textContent=Array.from(pending.friend.name||'同')[0];
     $('phoneCallTitle').textContent=incoming?pending.friend.name+' 正在呼叫你':pending.phase==='outgoing'?'正在呼叫 '+pending.friend.name:'正在连接通话…';
     $('phoneCallText').textContent=incoming?(pending.unknown?'这是新联系人。添加并接听后，对方会保存在你的联系人中。':'接听后自动进入同一个房间并开启语音。')
         :pending.phase==='outgoing'?'等待对方接听…'

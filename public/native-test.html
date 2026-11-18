@@ -1,1 +1,13 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>同屏 · 音频诊断</title><link rel="stylesheet" href="test.css"></head><body><main><div class="test-toolbar"><span>同屏 2.0 / 音频诊断</span><a href="/">返回通话</a></div><h1>确认音频链路是否按预期工作</h1><p>使用短暂的合成测试音，不开启麦克风，不采集个人窗口，不发送媒体到网络。扬声器的声学回音仍需两人实际通话验证。</p><button id="run">运行音频诊断</button><a href="/self-test.html">双端传输验证</a><p id="progress" role="status">等待开始。系统声音排除测试需要独立的外部测试音进程。</p><pre id="results"></pre></main><script src="audio.js"></script><script src="native-test.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>同屏 · 音频诊断</title><link rel="stylesheet" href="test.css"></head>
+<body><main>
+<div class="test-toolbar"><span>同屏 / 音频诊断</span><a href="/">返回通话 →</a></div>
+<h1>检查你的音频链路</h1>
+<p>运行后会播放短暂的合成测试音。测试不会开启麦克风、采集个人窗口或向网络发送媒体。</p>
+<div class="test-actions"><button id="run">运行音频诊断</button><a href="/self-test.html">双端传输验证</a></div>
+<p id="progress" role="status">尚未开始。系统声音排除测试会打开一个独立的测试音进程。</p>
+<pre id="results" aria-label="诊断结果"></pre>
+<p class="test-note">扬声器的实际回声效果，需要两人通话验证。</p>
+</main><script src="audio.js"></script><script src="native-test.js"></script></body>
+</html>

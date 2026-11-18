@@ -1,5 +1,83 @@
-.update-panel{margin:22px 0;padding:18px;background:#232428;border:1px solid #404249;border-radius:10px}
-.update-panel h3{margin-top:0}.update-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
-.update-panel details{margin-top:16px}.update-panel input{width:100%}.update-panel summary{cursor:pointer;color:#b5bac1}
-.update-banner{position:fixed;top:46px;right:315px;z-index:30;display:flex;gap:14px;align-items:center;background:#303b68;color:#f2f3f5;box-shadow:0 3px 16px #0005;border:1px solid #5865f2;border-radius:8px;padding:8px 12px}
-.update-banner[hidden]{display:none}.update-banner button{white-space:nowrap}.mini-mode .update-banner{display:none}
+.update-panel {
+  margin:25px 0;
+  padding:20px;
+  background:#191c23;
+  border:1px solid #ffffff12;
+  border-radius:8px
+}
+.update-panel h3 {
+  margin:0 0 13px;
+  font-size:12px;
+  font-weight:500
+}
+.update-panel #updateStatus {
+  color:#c3cde3;
+  font-size:11px;
+  line-height:1.8
+}
+.update-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin:18px 0
+}
+.update-actions button,#updateSourceSave {
+  font-size:10px;
+  padding:7px 10px
+}
+.update-panel details {
+  margin:20px 0 10px;
+  padding-top:16px;
+  border-top:1px solid var(--line-strong)
+}
+.update-panel input[type=url] {
+  width:100%;
+  font-size:10px
+}
+.update-panel>.hint {
+  margin-bottom:0
+}
+.update-banner {
+  position:fixed;
+  top:106px;
+  right:308px;
+  z-index:30;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  max-width:520px;
+  padding:11px 14px;
+  border:1px solid #afc1ff40;
+  border-radius:8px;
+  box-shadow:0 8px 24px #0005;
+  background:#272f45;
+  color:#dfe8ff;
+  font-size:11px
+}
+.update-banner>svg {
+  width:16px;
+  height:16px;
+  color:#aebfff
+}
+.update-banner button {
+  white-space:nowrap;
+  background:#b6c6ff;
+  border-color:transparent;
+  color:#23314f;
+  font-size:10px;
+  padding:6px 9px
+}
+.mini-mode .update-banner {
+  display:none
+}
+@media(max-width:1280px) {
+  .update-banner {
+    right:284px
+  }
+}
+@media(max-width:1100px) {
+  .update-banner {
+    right:24px;
+    max-width:calc(100vw - 260px)
+  }
+}

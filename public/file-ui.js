@@ -11,7 +11,7 @@ function transferRate(peer){
 }
 const transfers=new FriendsFiles.Transfers(call,fileIO,{rate:transferRate});
 function fileSize(n){if(n<1024)return n+' B';const u=['KB','MB','GB','TB'];let i=-1;do{n/=1024;i++;}while(n>=1024&&i<3);return n.toFixed(n>=100?0:1)+' '+u[i];}
-function openTransfers(){document.querySelector('.shell').classList.remove('no-right');$('fileTransfers').hidden=false;$('fileTransfers').scrollIntoView({block:'nearest'});}
+function openTransfers(){setSidebar(true);$('fileTransfers').hidden=false;$('filesToggle').setAttribute('aria-expanded','true');$('fileTransfers').scrollIntoView({block:'nearest'});}
 function bindFileTarget(el,peer,name,clickable=false){
     el.dataset.filePeer=peer;el.title='拖文件到这里，发送给 '+name;
     if(clickable){el.classList.add('file-avatar');el.tabIndex=0;el.setAttribute('role','button');el.setAttribute('aria-label','给 '+name+' 发送文件');el.onclick=e=>{e.stopPropagation();pickPeerFiles(peer);};el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();pickPeerFiles(peer);}};}
@@ -31,6 +31,7 @@ document.addEventListener('dragover',e=>{if(!hasFiles(e))return;e.preventDefault
 document.addEventListener('dragleave',e=>{if(!e.relatedTarget)clearFileDrag();});
 document.addEventListener('drop',e=>{if(!hasFiles(e))return;e.preventDefault();clearFileDrag();const target=e.target.closest('[data-file-peer]');if(!target)return toast('把文件拖到对方头像或共享卡片上即可发送');const files=Array.from(e.dataTransfer.files);run(()=>sendPeerFiles(target.dataset.filePeer,files));});
 $('filesToggle').onclick=openTransfers;
+$('closeTransfers').onclick=()=>{$('fileTransfers').hidden=true;$('filesToggle').setAttribute('aria-expanded','false');$('filesToggle').focus();};
 $('clearTransfers').onclick=()=>{for(const t of [...transfers.items.values()])if(t.terminal)transfers.dismiss(t.id);};
 const transferLabels={queued:'排队中',offering:'等待对方接收',waiting:'正在连接',offered:'等待你接收',choosing:'选择保存位置',transferring:'传输中',verifying:'正在校验文件',complete:'已完成 · 校验通过',cancelled:'已取消',failed:'传输失败'};
 transfers.addEventListener('update',e=>{
@@ -45,7 +46,7 @@ transfers.addEventListener('update',e=>{
     if(t.status==='offered')action('接收并另存为',()=>transfers.accept(t.id),true);
     if(!t.terminal)action(t.status==='offered'?'拒绝':'取消',()=>transfers.cancel(t.id));
     else if(t.receipt)action('打开所在文件夹',()=>fileIO.reveal(t.receipt));
-    $('fileEmpty').hidden=transfers.items.size>0;$('transferCount').textContent=String([...transfers.items.values()].filter(t=>!t.terminal).length);
+    $('fileEmpty').hidden=transfers.items.size>0;$('transferCount').textContent=String([...transfers.items.values()].filter(t=>!t.terminal).length);$('transferCount').dataset.empty=String($('transferCount').textContent==='0');
 });
 transfers.addEventListener('removed',e=>{transferRows.get(e.detail.id)?.box.remove();transferRows.delete(e.detail.id);$('fileEmpty').hidden=transfers.items.size>0;});
 window.addEventListener('pagehide',()=>transfers.close());
