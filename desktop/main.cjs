@@ -123,7 +123,7 @@ app.whenReady().then(async()=>{
             callback({video:source,...(chosen.audio&&request.audioRequested?{audio:'loopback'}:{})});
         }catch{callback({});}
     });
-    ipcMain.handle('desktop:info',guarded(()=>({version:app.getVersion(),electron:process.versions.electron,chrome:process.versions.chrome,windows:require('node:os').release(),gpu:app.getGPUFeatureStatus(),native:true})));
+    ipcMain.handle('desktop:info',guarded(()=>({version:app.getVersion(),electron:process.versions.electron,chrome:process.versions.chrome,windows:require('node:os').release(),gpu:app.getGPUFeatureStatus(),maximized:mainWindow.isMaximized(),native:true})));
     ipcMain.handle('desktop:sources',guarded(async()=>{
         const sources=await desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:280,height:158},fetchWindowIcons:true});
         return sources.filter(s=>!s.name.startsWith('同屏') || s.name==='同屏音频测试源').map(s=>({id:s.id,name:s.name,type:s.id.startsWith('screen:')?'screen':'window',thumbnail:s.thumbnail.toDataURL()}));
@@ -171,6 +171,8 @@ app.whenReady().then(async()=>{
         if(event.senderFrame.url.startsWith(ORIGIN+'/native-test.html'))server.fixtureTone=value===true;
     }));
     mainWindow=createWindow(ORIGIN+(phoneDiagnostics?'/phone-test.html':uiDiagnostics?'/ui-test.html'+(roomDiagnostics?'?roomDiagnostics=1':process.argv.includes('--ui-phase2')?'?phase=2':''):multiDiagnostics?'/multi-test.html'+(process.argv.includes('--public-signal')?'?public=1':''):fileDiagnostics?'/file-test.html':videoDiagnostics?'/video-test.html?autorun=1'+(inspectVideoSettings?'&prefs=1':'')+(process.argv.includes('--video-720')?'&q=720':''):diagnostics||autoDiagnostics?'/native-test.html'+(autoDiagnostics?'?autorun=1':''):launchRoom?'/?room='+encodeURIComponent(launchRoom)+'&invite=1':'/'));
+    mainWindow.on('maximize',()=>mainWindow?.webContents.send('desktop:maximized',true));
+    mainWindow.on('unmaximize',()=>mainWindow?.webContents.send('desktop:maximized',false));
     mainWindow.on('leave-full-screen',()=>mainWindow?.webContents.send('desktop:fullscreen-changed',false));
     mainWindow.on('close', event => {
         if (quitting) return;

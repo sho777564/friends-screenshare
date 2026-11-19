@@ -82,6 +82,14 @@ function syncShareLogControls() {
     $('markShareStall').hidden = !native?.shareLogs;
 }
 for(const id of Object.keys(initial)){const el=$(id);if(!el)continue;if(el.type==='checkbox')el.checked=!!settings[id];else el.value=String(settings[id]);}
+function paintRange(range){
+    const fraction=(Number(range.value)-Number(range.min))/(Number(range.max)-Number(range.min));
+    range.style.setProperty('--fill',fraction*100+'%');
+}
+for(const range of [$('micGain'),$('master')]){
+    paintRange(range);
+    range.addEventListener('input',()=>paintRange(range));
+}
 $('micGainValue').textContent=settings.micGain+'%';$('masterValue').textContent=settings.master+'%';mixer.masterVolume(settings.master);
 function buttonIcon(id,name){$(id).innerHTML=icon(name);}
 function effectiveMuted(){return micMuted||deafened||(settings.inputMode==='ptt'&&!pttPressed);}
@@ -111,21 +119,39 @@ function publish(speaking = false) {
         deafened, speaking: speaking === true });
 }
 function applyMute(){voice.setMuted(effectiveMuted());mixer.deafen(deafened);syncControls();publish();}
-function makeAvatar(name,small=true,peer=null){const el=document.createElement('span');el.className='avatar '+(small?'small':'large');el.textContent=Array.from(name||'同')[0];if(peer&&typeof bindFileTarget==='function')bindFileTarget(el,peer,name,true);return el;}
+function makeAvatar(name,small=true,peer=null){const el=document.createElement('span');el.className='avatar '+(small?'small':'large');el.textContent=Array.from(name||'同')[0];
+    const colors=['indigo','sage','gold','mauve'];
+    let hash=0;
+    for(const char of name||'同') hash=(hash*31+char.codePointAt(0))>>>0;
+    el.dataset.tone=colors[hash%colors.length];
+    if(peer&&typeof bindFileTarget==='function')bindFileTarget(el,peer,name,true);return el;}
 function layoutMedia(){
     if(document.body.classList.contains('mini-mode'))return;
     const scroll=document.querySelector('.call-scroll');
     const welcome=document.querySelector('.call-welcome');
     const tips=document.querySelector('.tips-line');
     const padding=parseFloat(getComputedStyle(scroll).paddingTop)+parseFloat(getComputedStyle(scroll).paddingBottom);
+    const screens=$('screens');
+    const shared=screens.querySelectorAll('.has-screen').length;
+    const single=shared+Number(!!display)===1;
+    screens.classList.toggle('single-share',single);
+    const rowGap=parseFloat(getComputedStyle(screens).rowGap);
     const count=cards.size+(display?1:0);
-    const rows=Math.max(1,Math.ceil(count/2));
-    const remoteHeight=$('remotePanel').hidden?0:$('remotePanel').offsetHeight+20;
-    const space=scroll.clientHeight-padding-welcome.offsetHeight-28-tips.offsetHeight-20-remoteHeight;
-    const extras=cards.size?126:43;
-    const height=Math.max(110,Math.floor((space-(rows-1)*18)/rows-extras));
-    $('screens').style.setProperty('--media-max-height',height+'px');
+    const columns=getComputedStyle(screens).gridTemplateColumns.split(' ').length;
+    const rows=single?1:Math.max(1,Math.ceil(count/columns));
+    const local=screens.querySelector('.local-card');
+    const card=screens.querySelector('.has-screen') || (display?local:[...cards.values()][0]?.card) || local;
+    const chrome=(card?.querySelector('.media-caption')?.offsetHeight||0)+(card?.querySelector('.tile-mixer')?.offsetHeight||0)+2;
+    const voiceCard=single && [...cards.values()].find(item=>!item.card.classList.contains('has-screen'))?.card;
+    const voices=voiceCard?Math.ceil((cards.size-shared)/columns)*(voiceCard.offsetHeight+rowGap):0;
+    const remote=$('remotePanel');
+    const outer=el=>el.offsetHeight?el.offsetHeight+parseFloat(getComputedStyle(el).marginBlockEnd)+parseFloat(getComputedStyle(el).marginBlockStart):0;
+    const space=scroll.clientHeight-padding-outer(welcome)-outer(tips)-outer(remote)-voices;
+    screens.style.setProperty('--media-max-height',Math.max(100,Math.floor((space-rowGap*(rows-1))/rows-chrome))+'px');
 }
+new ResizeObserver(([entry])=>{
+    document.querySelector('.shell').style.setProperty('--dock-height',entry.borderBoxSize[0].blockSize+'px');
+}).observe(document.querySelector('.call-controls'));
 new ResizeObserver(layoutMedia).observe(document.querySelector('.call-scroll'));
 function renderMembers(){
     $('screens').classList.toggle('has-peers',cards.size>0);
@@ -149,6 +175,13 @@ function joinDialog(advanced=false){$('roomAdvanced').open=advanced;$('roomDialo
 async function quickJoin(mode='manual'){await roomBoot;if(!localStorage.getItem('friendsV2Name'))return joinDialog(false);await joinRoom(mode);}
 $('joinOpen').onclick=()=>run(quickJoin);$('newRoom').onclick=()=>run(async()=>{await roomBoot;joinDialog(true);});
 for(const node of document.querySelectorAll('[data-close]'))node.onclick=()=>$(node.dataset.close).close();
+function showMaximized(maximized){
+    const button=document.querySelector('[data-window=maximize]');
+    button.innerHTML=icon(maximized?'winRestore':'winMax');
+    button.title=maximized?'还原窗口':'最大化';
+    button.setAttribute('aria-label',button.title);
+}
+native?.onMaximized?.(showMaximized);
 for(const node of document.querySelectorAll('[data-window]'))node.onclick=()=>native?.window(node.dataset.window);
 async function configureOutput(socket=call.socket){
     const selected=settings.output;
@@ -218,7 +251,7 @@ call.addEventListener('status',event=>{
 });
 call.addEventListener('error',e=>reportError('peer',e.detail.error||e.detail.message,e.detail.message,{attempt:roomAttempt}));
 call.addEventListener('warning',e=>reportError('peer',e.detail.message,e.detail.message,{attempt:roomAttempt}));
-call.addEventListener('left',()=>{diagnostic('room','left',null,{attempt:roomAttempt});joined=false;$('join').disabled=false;$('connectionLabel').textContent='已断开';document.querySelector('.connection-panel').classList.remove('connected');$('welcomeTitle').textContent='一起看，也一起聊。';$('welcomeText').textContent='分享游戏、视频和屏幕，最多 4 人同时在线。';mediaCleanup=releaseMedia();mediaCleanup.catch(error=>reportError('room',error));syncControls();});
+call.addEventListener('left',()=>{diagnostic('room','left',null,{attempt:roomAttempt});joined=false;$('join').disabled=false;$('connectionLabel').textContent='已断开';document.querySelector('.connection-panel').classList.remove('connected');$('welcomeTitle').textContent='准备加入房间';$('welcomeText').textContent='分享游戏、视频和屏幕，最多 4 人同时在线。';mediaCleanup=releaseMedia();mediaCleanup.catch(error=>reportError('room',error));syncControls();});
 async function enumerate(){
     const devices=await navigator.mediaDevices.enumerateDevices();
     for(const [id,kind,label] of [['input','audioinput','系统默认麦克风'],['output','audiooutput','系统默认扬声器']]){
@@ -317,7 +350,16 @@ function renderSources(){
     $('sources').replaceChildren();for(const source of sourceList.filter(s=>s.type===sourceType)){
         const button=document.createElement('button');button.className='source-card'+(source.id===selectedSource?.id?' selected':'');button.setAttribute('aria-pressed',String(source.id===selectedSource?.id));
         const img=document.createElement('img');img.src=source.thumbnail;img.alt='';const title=document.createElement('span');title.textContent=source.name;
-        button.append(img,title);button.onclick=()=>{selectedSource=source;$('startShare').disabled=false;renderSources();};$('sources').append(button);
+        button.append(img,title);
+        button.onclick=()=>{
+            selectedSource=source;
+            $('startShare').disabled=false;
+            for(const option of $('sources').querySelectorAll('.source-card')){
+                option.classList.toggle('selected',option===button);
+                option.setAttribute('aria-pressed',String(option===button));
+            }
+        };
+        $('sources').append(button);
     }
     if(!$('sources').children.length){const text=document.createElement('p');text.className='muted';text.textContent='没有可用的共享来源';$('sources').append(text);}
 }
@@ -356,6 +398,15 @@ async function leaveRoom(){await stopShare();await call.setTrack('voice',null);c
 $('leave').onclick=()=>run(leaveRoom);
 async function invite(){await roomBoot;const room=$('room').value.trim();const text=FriendsRooms.inviteUrl(room);if(native)await native.clipboard(text);else await navigator.clipboard.writeText(text);toast('已复制邀请链接。发给朋友打开，就会带入同一个房间号。');}
 for(const id of ['invite','headerInvite','emptyInvite'])$(id).onclick=()=>run(invite);
+function renderLobbyOptions(){
+    $('lobbyMicMode').textContent=$('inputMode').selectedOptions[0]?.textContent || '语音活动';
+    const [,height,fps]=$('quality').value.split(',');
+    $('lobbyQuality').textContent=height && fps ? height+'p · '+fps+' 帧' : '自定义';
+}
+renderLobbyOptions();
+for(const id of ['inputMode','quality']) $(id).addEventListener('change',renderLobbyOptions);
+$('lobbyAudio').onclick=()=>openSettings('audio');
+$('lobbyVideo').onclick=()=>openSettings('video');
 function openSettings(tab='audio'){$('settingsDialog').showModal();settingsTab(tab);run(enumerate);}
 for(const id of ['settingsOpen','headerSettings'])$(id).onclick=()=>openSettings();
 function settingsTab(tab){
@@ -395,6 +446,7 @@ function volumeControl(label, peer, kind) {
     function refresh() {
         const saved = peerVolumes.get(peer, kind);
         range.value = saved.volume;
+        paintRange(range);
         value.textContent = saved.muted ? '静音' : saved.volume + '%';
         mute.textContent = saved.muted ? '取消静音' : '静音';
         mute.setAttribute('aria-label', (saved.muted ? '取消静音' : '静音') + label);
@@ -491,8 +543,35 @@ call.addEventListener('peerleft', ({ detail }) => {
 });
 call.addEventListener('signal', ({ detail }) => { void shareLog.event('signal', { state: detail.state }); });
 call.addEventListener('data',event=>{const {id,name,data}=event.detail;if(data.type==='state'){peerState.set(id,{mic:!!data.mic,deafened:!!data.deafened,speaking:!!data.speaking,screen:!!data.screen,sound:!!data.sound});const item=cards.get(id);if(item){item.card.classList.toggle('speaking',!!data.speaking);item.card.classList.toggle('has-screen',!!data.screen);item.placeholder.hidden=!!data.screen;item.live.hidden=!data.screen;item.status.textContent=data.screen?(data.sound?'画面与声音':'画面 · 声音静音'):data.mic?'麦克风已开':'麦克风静音';}renderMembers();}else if(data.type==='chat'&&typeof data.text==='string')appendMessage(name,data.text.slice(0,2000),data.time);});
-function appendMessage(name,text,time=Date.now()){document.querySelector('#messages .chat-start')?.remove();const message=document.createElement('article');message.className='message';const title=document.createElement('span');title.className='message-author';title.textContent=name;const when=document.createElement('time');const date=new Date(time);when.textContent=Number.isNaN(date.getTime())?'':date.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});const body=document.createElement('p');body.textContent=text;message.append(title,when,body);$('messages').append(message);$('messages').scrollTop=$('messages').scrollHeight;}
-$('chatForm').onsubmit=event=>{event.preventDefault();const text=$('chatInput').value.trim();if(!text)return;if(!call.sendData({type:'chat',text,time:Date.now()}))return toast('朋友尚未连上，消息没有发送。');appendMessage(call.name,text);$('chatInput').value='';};
+function appendMessage(name,text,time=Date.now(),own=false){
+    const list=$('messages');
+    const follow=own || list.scrollHeight-list.scrollTop-list.clientHeight<32;
+    list.querySelector('.chat-start')?.remove();
+    const message=document.createElement('article');
+    message.className='message';
+    const title=document.createElement('span');
+    title.className='message-author';
+    title.textContent=name;
+    const when=document.createElement('time');
+    const date=new Date(time);
+    when.textContent=Number.isNaN(date.getTime())?'':date.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    const body=document.createElement('p');
+    body.textContent=text;
+    message.append(title,when,body);
+    list.append(message);
+    if(follow) list.scrollTop=list.scrollHeight;
+}
+const chatInput=$('chatInput');
+function syncSendButton(){ $('sendMessage').disabled=!chatInput.value.trim(); }
+chatInput.addEventListener('input',syncSendButton);
+let confirmingComposition=false;
+chatInput.addEventListener('keydown',event=>{
+    if(event.key==='Enter' && (event.isComposing || event.keyCode===229)){
+        confirmingComposition=true;
+        setTimeout(()=>{confirmingComposition=false;},0);
+    }
+});
+$('chatForm').onsubmit=event=>{event.preventDefault();if(confirmingComposition)return;const text=$('chatInput').value.trim();if(!text)return;if(!call.sendData({type:'chat',text,time:Date.now()}))return toast('朋友尚未连上，消息没有发送。');appendMessage(call.name,text,Date.now(),true);chatInput.value='';syncSendButton();chatInput.focus();};
 function sidebarVisible(){return getComputedStyle($('rightSidebar')).display!=='none';}
 function setSidebar(open){
     const shell=document.querySelector('.shell');
@@ -586,7 +665,7 @@ setInterval(async()=>{
         $('advice').textContent=constrained?'这一路可用上行偏低，正在降低视频发送目标，给语音和共享声音留出空间。':peers.some(p=>p.path==='TURN 中继')?'当前媒体经过公共中继，其路径和带宽可能限制画质。':'静止画面低帧率可能正常，请在游戏或视频运动时查看实际帧率。';
     }catch(error){console.warn(error);}finally{statsBusy=false;}
 },2000);
-if(native)native.info().then(info=>{desktopInfo=info;$('nativeBadge').textContent='Windows 桌面版 · '+info.version;$('engineInfo').textContent='Electron '+info.electron+' · Chromium '+info.chrome+' · Windows '+info.windows;});
+if(native)native.info().then(info=>{desktopInfo=info;showMaximized(info.maximized);$('nativeBadge').textContent='Windows 桌面版 · '+info.version;$('engineInfo').textContent='Electron '+info.electron+' · Chromium '+info.chrome+' · Windows '+info.windows;});
 else{$('nativeBadge').textContent='网页预览 · 防回音共享请用桌面版';$('engineInfo').textContent='当前为浏览器预览。完整的系统声音排除需要桌面版。';}
 $('copyVideoDiagnostic').onclick=()=>run(async()=>{
     const captureSettings=display?.getVideoTracks()[0]?.getSettings();

@@ -12,9 +12,9 @@
       <span class="app-title">同屏</span>
       <span id="nativeBadge">语音与屏幕协作</span>
       <div class="window-controls">
-        <button data-window="minimize" title="最小化" aria-label="最小化">−</button>
-        <button data-window="maximize" title="最大化" aria-label="最大化">□</button>
-        <button data-window="close" class="close-window" title="最小化到托盘" aria-label="最小化到托盘">×</button>
+        <button data-window="minimize" title="最小化" aria-label="最小化" data-icon="winMin"></button>
+        <button data-window="maximize" title="最大化" aria-label="最大化" data-icon="winMax"></button>
+        <button data-window="close" class="close-window" title="最小化到托盘" aria-label="最小化到托盘" data-icon="close"></button>
       </div>
     </div>
     <div class="shell">
@@ -64,7 +64,7 @@
           <span class="channel-symbol" data-icon="speaker"></span>
           <strong>一起看</strong>
           <span class="header-divider"></span>
-          <span class="header-subtitle">语音 · 屏幕 · 好友</span>
+          <span class="header-subtitle">语音房间</span>
           <div class="header-actions">
             <button id="miniReturn" hidden>返回主窗口</button>
             <button id="headerInvite" class="invite-button" title="邀请好友"><span data-icon="userPlus"></span><span>邀请</span></button>
@@ -77,9 +77,13 @@
         <div class="call-scroll">
           <div class="call-welcome">
             <div>
-              <p class="eyebrow">好友房间</p>
-              <h1 id="welcomeTitle">一起看，也一起聊。</h1>
+              <span class="brand-mark lobby-mark" aria-hidden="true"></span>
+              <h1 id="welcomeTitle">准备加入房间</h1>
               <p id="welcomeText">分享游戏、视频和屏幕，最多 4 人同时在线。</p>
+            </div>
+            <div class="lobby-options" aria-label="入房前设置">
+              <button id="lobbyAudio"><span data-icon="mic"></span><strong>麦克风模式</strong><span id="lobbyMicMode"></span><span data-icon="chevronDown"></span></button>
+              <button id="lobbyVideo"><span data-icon="screen"></span><strong>共享画质</strong><span id="lobbyQuality"></span><span data-icon="chevronDown"></span></button>
             </div>
             <button id="joinOpen" class="primary">进入好友房间<span data-icon="arrowRight"></span></button>
           </div>
@@ -110,8 +114,8 @@
             <article id="emptyPeer" class="media-card waiting-card">
               <div class="waiting-content">
                 <span data-icon="userPlus"></span>
-                <h2>给朋友留个位置</h2>
-                <p>邀请朋友，进入同一个房间。</p>
+                <h2>邀请朋友</h2>
+                <p>一起进入这个房间。</p>
                 <button id="emptyInvite">复制邀请链接<span data-icon="arrowRight"></span></button>
               </div>
             </article>
@@ -202,7 +206,7 @@
           </div>
           <form id="chatForm">
             <input id="chatInput" aria-label="发送消息" placeholder="发条消息…" maxlength="2000" autocomplete="off">
-            <button title="发送" data-icon="send"></button>
+            <button id="sendMessage" title="发送消息" aria-label="发送消息" disabled data-icon="send"></button>
           </form>
         </section>
       </aside>

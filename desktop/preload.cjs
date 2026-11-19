@@ -30,6 +30,11 @@ contextBridge.exposeInMainWorld('friendsDesktop',{
         ipcRenderer.on('desktop:mini-changed', handler);
         return () => ipcRenderer.removeListener('desktop:mini-changed', handler);
     },
+    onMaximized:callback=>{
+        const handler=(event,value)=>callback(value);
+        ipcRenderer.on('desktop:maximized',handler);
+        return ()=>ipcRenderer.removeListener('desktop:maximized',handler);
+    },
     onFullscreen:callback=>{const handler=(event,value)=>callback(value);ipcRenderer.on('desktop:fullscreen-changed',handler);return()=>ipcRenderer.removeListener('desktop:fullscreen-changed',handler);},
     onInvite:callback=>{const handler=(event,room)=>callback(room);ipcRenderer.on('desktop:invite',handler);return()=>ipcRenderer.removeListener('desktop:invite',handler);},
     clipboard:text=>ipcRenderer.invoke('desktop:clipboard',text),

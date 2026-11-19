@@ -52,7 +52,9 @@ async function run() {
     }
     await shot('01-idle');
     await check('Idle primary action and invitation are visible',"!$('joinOpen').hidden && $('emptyInvite').getBoundingClientRect().height>0");
-    await evaluate("document.getElementById('settingsOpen').click()");
+    await evaluate("$('lobbyVideo').click()");
+    await check('Lobby opens the matching quality preferences', "$('settingsDialog').open && !document.querySelector('[data-settings=video]').hidden && $('lobbyQuality').textContent.includes('1080p')");
+    await evaluate("$('settingsDialog').close();$('settingsOpen').click()");
     await shot('02-settings');
     await check('All four settings destinations remain available',"document.querySelectorAll('.settings-nav [data-tab]').length===4");
     await evaluate("document.getElementById('settingsDialog').close()");
@@ -109,6 +111,8 @@ async function run() {
         $('welcomeText').textContent='4 位朋友在线 · 拖文件到头像，即可发送';
     `);
     await shot('09-group');
+    await check('A single shared screen has the full stage width', "Math.abs(cards.get('preview-lin').card.offsetWidth-$('screens').clientWidth)<2");
+    await check('The mixer paints the restored system-audio level', "cards.get('preview-lin').card.querySelectorAll('input')[1].style.getPropertyValue('--fill')==='40%'");
     await check('Four-person member lists stay in sync',"$('memberCount').textContent==='4' && document.querySelectorAll('#members .member').length===4 && cards.size===3");
     await evaluate("for(const id of ['preview-qing','preview-yuan']){call.emit('track',{id,name:call.peers.get(id).name,kind:'screen',stream:previewStream});call.emit('data',{id,name:call.peers.get(id).name,data:{type:'state',screen:true,sound:true,mic:true}});}display=previewStream;currentSource={type:'screen'};$('localVideo').srcObject=previewStream;syncControls()");
     await shot('17-four-shares');
@@ -117,6 +121,7 @@ async function run() {
     await shot('10-compact',1000,680);
     await evaluate("$('chatToggle').click()");await shot('11-compact-chat',1000,680);
     await check('Compact window can open chat without covering the call controls',"sidebarVisible() && $('chatToggle').getAttribute('aria-expanded')==='true' && $('rightSidebar').getBoundingClientRect().bottom<=document.querySelector('.call-controls').getBoundingClientRect().top+1");
+    await check('Compact chat uses space alongside the shared screen', "cards.get('preview-lin').card.getBoundingClientRect().right<=$('rightSidebar').getBoundingClientRect().left");
     await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
     await check('Escape dismisses the compact panel',"!sidebarVisible() && $('chatToggle').getAttribute('aria-expanded')==='false'");
     await evaluate("$('filesToggle').click()");
@@ -148,6 +153,10 @@ async function run() {
     await evaluate("$('miniReturn').click()");await pause(300);
     await check('Returning from floating view retains the call and selected volumes',"!document.body.classList.contains('mini-mode') && joined && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===.4");
     await check('Messages replace the empty state and remain text nodes',"!document.querySelector('#messages .chat-start') && document.querySelectorAll('#messages .message').length===2");
+    await evaluate("$('chatInput').value='收到';$('chatInput').dispatchEvent(new Event('input'));");
+    await check('A typed message enables sending', "!$('sendMessage').disabled");
+    await evaluate("$('chatForm').requestSubmit()");
+    await check('Send clears the draft and disables the empty composer', "$('sendMessage').disabled && !$('chatInput').value && $('messages').lastElementChild.querySelector('p').textContent==='收到'");
     await check('No horizontal page overflow after native window transitions',"document.documentElement.scrollWidth===innerWidth");
     fs.writeFileSync(path.join(directory,'verification.json'),JSON.stringify({passed:true,checks},null,2));
     await evaluate("previewAudio.close()");
