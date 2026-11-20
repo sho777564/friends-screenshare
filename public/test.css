@@ -1,8 +1,8 @@
 :root {
   color-scheme:dark;
   font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;
-  background:#252933;
-  color:#e1e4ef
+  background:#1b1b1f;
+  color:#eeeef0
 }
 * {
   box-sizing:border-box
@@ -22,7 +22,7 @@ main {
   border-bottom:1px solid #ffffff14;
   padding:0 0 24px;
   margin-bottom:40px;
-  color:#b3bbcc;
+  color:#b4b4bc;
   font-size:12px
 }
 h1 {
@@ -39,38 +39,38 @@ h2 {
 p {
   font-size:12px;
   line-height:1.9;
-  color:#98a2b8;
+  color:#96969f;
   max-width:760px
 }
 button {
-  border:1px solid #c2caff22;
+  border:1px solid #ffffff1a;
   border-radius:6px;
   padding:11px 18px;
-  background:#b3bcff;
-  color:#1e2340;
+  background:#5e6ad2;
+  color:#fff;
   font:600 12px "Segoe UI",sans-serif;
   cursor:pointer;
   margin:8px 16px 8px 0;
   transition:background .14s
 }
 button:hover {
-  background:#c9d1ff
+  background:#626dd3
 }
 button:disabled {
   opacity:.4;
   cursor:default
 }
 a {
-  color:#b3c0f4;
+  color:#a3a6ee;
   text-decoration:none;
   font-size:12px
 }
 a:hover {
-  color:#dae2ff;
+  color:#c3c5f5;
   text-decoration:underline
 }
 button:focus-visible,a:focus-visible {
-  outline:2px solid #b2b8ff;
+  outline:2px solid #a3a6ee;
   outline-offset:4px
 }
 .test-actions {
@@ -84,14 +84,14 @@ pre {
   overflow-wrap:anywhere;
   font:12px/1.9 Consolas,monospace;
   padding:24px;
-  background:#1b1e26;
+  background:#17171a;
   border:1px solid #ffffff12;
   border-radius:8px;
   min-height:180px;
-  color:#bac8e6
+  color:#d0d0d6
 }
 .test-note {
-  color:#747f99;
+  color:#96969f;
   font-size:11px
 }
 .test-grid {
@@ -101,7 +101,7 @@ pre {
 }
 .test-video {
   aspect-ratio:16/9;
-  background:#0e1015;
+  background:#101012;
   border:1px solid #ffffff14;
   border-radius:6px;
   overflow:hidden

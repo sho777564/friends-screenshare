@@ -21,7 +21,7 @@
       <aside class="channels" aria-label="房间与联系人">
         <div class="space-name">
           <span class="brand-mark" aria-hidden="true"></span>
-          <div><strong>同屏</strong><small>和朋友，一起在线</small></div>
+          <div><strong>同屏</strong></div>
           <button id="newRoom" class="icon-button" title="创建或加入房间" aria-label="创建或加入房间" data-icon="plus"></button>
         </div>
         <div class="channel-list">
@@ -37,10 +37,8 @@
               <h2 class="category">联系人</h2>
               <button id="phoneAdd" class="icon-button" title="添加联系人" aria-label="添加联系人" data-icon="plus" disabled></button>
             </div>
-            <p id="phoneStatus" class="phone-status">正在准备呼叫…</p>
             <div id="phoneContacts"></div>
             <button id="phoneCopy" class="phone-copy" disabled><span data-icon="copy"></span>复制我的好友码</button>
-            <p class="phone-hint">收进托盘，也能接到来电</p>
           </section>
         </div>
         <div class="connection-panel">
@@ -63,8 +61,6 @@
         <header class="channel-header">
           <span class="channel-symbol" data-icon="speaker"></span>
           <strong>一起看</strong>
-          <span class="header-divider"></span>
-          <span class="header-subtitle">语音房间</span>
           <div class="header-actions">
             <button id="miniReturn" hidden>返回主窗口</button>
             <button id="headerInvite" class="invite-button" title="邀请好友"><span data-icon="userPlus"></span><span>邀请</span></button>
@@ -104,12 +100,11 @@
                 <div id="localEmpty" class="avatar-placeholder local-placeholder">
                   <span class="screen-placeholder-icon" data-icon="screen"></span>
                   <h2>你的屏幕，等你分享</h2>
-                  <p>进入房间后，选择整个屏幕或应用窗口</p>
                 </div>
                 <span id="localLive" class="live-tag" hidden>正在共享</span>
                 <button id="localStop" class="tile-action" hidden title="停止屏幕共享" data-icon="stop"></button>
               </div>
-              <div class="media-caption"><strong id="localCaption">你</strong><span id="captureStats">尚未共享</span></div>
+              <div class="media-caption"><strong id="localCaption">你</strong><span id="captureStats" hidden></span></div>
             </article>
             <article id="emptyPeer" class="media-card waiting-card">
               <div class="waiting-content">
@@ -120,7 +115,6 @@
               </div>
             </article>
           </div>
-          <div class="tips-line"><span data-icon="headphones"></span><span id="audioStatus">语音和共享声音独立调节，音量设置会自动保存。</span></div>
           <div id="statsPanel" class="stats-panel" hidden>
             <div class="section-heading">
               <h3>连接与媒体质量</h3>
@@ -139,11 +133,9 @@
           <div class="controls-cluster" role="group" aria-label="通话控制">
             <div class="control-item">
               <button id="mic" class="round" title="开启麦克风" data-icon="micOff"></button>
-              <span>麦克风</span>
             </div>
             <div class="control-item">
               <button id="deafen" class="round" title="耳机静音" data-icon="headphones"></button>
-              <span>耳机</span>
             </div>
             <span class="control-separator"></span>
             <div class="control-item">
@@ -151,19 +143,15 @@
                 <button id="share" class="round" title="共享屏幕" data-icon="screen"></button>
                 <button id="changeShare" class="change-source" title="更换共享内容" aria-label="更换共享内容" data-icon="chevronDown" hidden></button>
               </div>
-              <span>屏幕共享</span>
             </div>
             <div class="control-item">
               <button id="shareSound" class="round" title="共享声音：开启" data-icon="speaker"></button>
-              <span>共享声音</span>
             </div>
             <span class="control-separator"></span>
             <div class="control-item">
-              <button id="leave" class="round disconnect" title="断开连接" data-icon="phone"></button>
-              <span>离开</span>
+              <button id="leave" class="round disconnect" title="离开房间" aria-label="离开房间" data-icon="phone"></button>
             </div>
           </div>
-          <div class="controls-labels" role="status"><span id="micLabel">麦克风已关</span><span id="shareLabel">共享时默认带声音</span></div>
         </div>
         <div id="toast" role="status" aria-live="polite" hidden>
           <span id="toastMessage"></span>
@@ -196,12 +184,11 @@
           <div id="transferList" aria-live="polite"></div>
         </section>
         <section class="chat-section" id="chatSection">
-          <div class="chat-heading"><strong>消息</strong><span>本次通话</span></div>
+          <div class="chat-heading"><strong>消息</strong></div>
           <div class="messages" id="messages">
             <div class="chat-start">
               <span data-icon="chat"></span>
               <strong>聊天，从这里开始</strong>
-              <p>加入房间后，和朋友发条消息。</p>
             </div>
           </div>
           <form id="chatForm">

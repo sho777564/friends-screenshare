@@ -52,6 +52,7 @@ async function run() {
     }
     await shot('01-idle');
     await check('Idle primary action and invitation are visible',"!$('joinOpen').hidden && $('emptyInvite').getBoundingClientRect().height>0");
+    await check('Icon-only call dock retains accessible button names', "['mic','deafen','share','shareSound','leave'].every(id=>$(id).getAttribute('aria-label')) && !document.querySelector('.control-item > span, .controls-labels, #phoneStatus, .header-subtitle, .tips-line')");
     await evaluate("$('lobbyVideo').click()");
     await check('Lobby opens the matching quality preferences', "$('settingsDialog').open && !document.querySelector('[data-settings=video]').hidden && $('lobbyQuality').textContent.includes('1080p')");
     await evaluate("$('settingsDialog').close();$('settingsOpen').click()");
@@ -102,10 +103,24 @@ async function run() {
     await evaluate("cards.get('preview-lin').card.querySelector('.volume-control button').click()");
     await check('Unmute restores the selected voice gain',"mixer.entries.get('preview-lin:voice').volume===1.75");
     await check('Shared audio cannot exceed 100 percent',"cards.get('preview-lin').card.querySelectorAll('input')[1].max==='100'");
+    await evaluate("cards.get('preview-lin').watch.click()");
+    await shot('21-paused-view');
+    await check('Pausing detaches video and mutes shared audio while voice and room stay active', "(()=>{const item=cards.get('preview-lin');return joined && item.watchPaused && !item.video.srcObject && item.watch.textContent==='继续观看' && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===0;})()");
+    await check('Resume stays centered in the compact paused preview', "(()=>{const item=cards.get('preview-lin');const area=item.area.getBoundingClientRect(), button=item.watch.getBoundingClientRect();return Math.abs((button.left+button.right)-(area.left+area.right))<2 && button.height>0;})()");
+    await evaluate("call.emit('track',{id:'preview-lin',name:'小林',kind:'screen',stream:previewStream});call.emit('data',{id:'preview-lin',name:'小林',data:{type:'state',screen:true,sound:true,mic:true}})");
+    await check('New track and state updates respect the paused view', "cards.get('preview-lin').watchPaused && !cards.get('preview-lin').video.srcObject");
+    await evaluate("cards.get('preview-lin').watch.click()");
+    await check('Resume uses the current stream and restores saved shared audio gain', "cards.get('preview-lin').video.srcObject===previewStream && mixer.entries.get('preview-lin:sound').volume===.4 && !cards.get('preview-lin').watchPaused");
     await evaluate("cards.get('preview-lin').card.querySelector('.tile-action').click()");await pause(300);await shot('16-fullscreen');
     await check('Fullscreen uses the original live stream and fills the viewport',"fullscreenArea && cards.get('preview-lin').video.srcObject===previewStream && Math.abs(fullscreenArea.getBoundingClientRect().width-innerWidth)<2 && Math.abs(fullscreenArea.getBoundingClientRect().height-innerHeight)<2");
     await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");await pause(300);
     await check('Escape restores the same video without reconnecting',"!fullscreenArea && cards.get('preview-lin').video.srcObject===previewStream");
+    await evaluate("cards.get('preview-lin').card.querySelector('.tile-action').click()");await pause(200);
+    await evaluate("cards.get('preview-lin').watch.click()");await pause(200);
+    await check('Pausing from fullscreen returns to the room with a resume button', "!fullscreenArea && cards.get('preview-lin').watchPaused && !cards.get('preview-lin').watch.hidden");
+    await evaluate("call.emit('data',{id:'preview-lin',name:'小林',data:{type:'state',screen:false,mic:true}})");
+    await check('A stopped share clears the pause control and a later share can play', "cards.get('preview-lin').watch.hidden && !cards.get('preview-lin').watchPaused");
+    await evaluate("call.emit('data',{id:'preview-lin',name:'小林',data:{type:'state',screen:true,sound:true,mic:true}})");
     await evaluate(`
         for(const [id,name] of [['preview-qing','阿青'],['preview-yuan','小远']]){call.peers.set(id,{id,name,identity:id,pc:{close(){}}});call.emit('peer',{id,name});call.emit('data',{id,name,data:{type:'state',screen:false,mic:true}});}
         $('welcomeText').textContent='4 位朋友在线 · 拖文件到头像，即可发送';
@@ -117,6 +132,9 @@ async function run() {
     await evaluate("for(const id of ['preview-qing','preview-yuan']){call.emit('track',{id,name:call.peers.get(id).name,kind:'screen',stream:previewStream});call.emit('data',{id,name:call.peers.get(id).name,data:{type:'state',screen:true,sound:true,mic:true}});}display=previewStream;currentSource={type:'screen'};$('localVideo').srcObject=previewStream;syncControls()");
     await shot('17-four-shares');
     await check('Four shared screens retain separate controls',"document.querySelectorAll('.media-card.has-screen').length===3 && !$('localLive').hidden && $('screens').classList.contains('self-sharing') && document.querySelectorAll('.volume-control').length===6");
+    await evaluate("cards.get('preview-qing').watch.click()");
+    await check('Pausing one share leaves other shares playing', "!cards.get('preview-qing').video.srcObject && cards.get('preview-lin').video.srcObject===previewStream && cards.get('preview-yuan').video.srcObject===previewStream && $('localVideo').srcObject===previewStream");
+    await evaluate("cards.get('preview-qing').watch.click()");
     await evaluate("display=null;currentSource=null;$('localVideo').srcObject=null;for(const id of ['preview-qing','preview-yuan'])call.emit('data',{id,name:call.peers.get(id).name,data:{type:'state',screen:false,mic:true}});syncControls()");
     await shot('10-compact',1000,680);
     await evaluate("$('chatToggle').click()");await shot('11-compact-chat',1000,680);
@@ -150,7 +168,9 @@ async function run() {
     const bounds=await evaluate(`JSON.stringify({size:[innerWidth,innerHeight],controls:[...cards.get('preview-lin').card.querySelectorAll('.volume-control')].map(el=>{const r=el.getBoundingClientRect();return {width:r.width,top:r.top,bottom:r.bottom}}),body:document.body.className})`);
     fs.writeFileSync(path.join(directory,'layout-check.json'),bounds);
     await check('Floating viewer keeps both volume controls and original video',"document.body.classList.contains('mini-mode') && cards.get('preview-lin').video.srcObject===previewStream && [...cards.get('preview-lin').card.querySelectorAll('.volume-control')].every(el=>{const r=el.getBoundingClientRect();return r.top>0&&r.bottom<innerHeight;})");
-    await evaluate("$('miniReturn').click()");await pause(300);
+    await evaluate("cards.get('preview-lin').watch.click()");await pause(300);
+    await check('Pausing from the floating viewer returns to the room', "!document.body.classList.contains('mini-mode') && cards.get('preview-lin').watchPaused && joined");
+    await evaluate("cards.get('preview-lin').watch.click()");
     await check('Returning from floating view retains the call and selected volumes',"!document.body.classList.contains('mini-mode') && joined && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===.4");
     await check('Messages replace the empty state and remain text nodes',"!document.querySelector('#messages .chat-start') && document.querySelectorAll('#messages .message').length===2");
     await evaluate("$('chatInput').value='收到';$('chatInput').dispatchEvent(new Event('input'));");

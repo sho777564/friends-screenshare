@@ -30,8 +30,6 @@ async function startPhoneTone(incoming) {
 }
 function renderPhone() {
     const phone=phoneController;
-    $('phoneStatus').textContent=!phone?'正在连接来电服务…':phone.connected?'来电服务已连接':'来电服务重新连接中';
-    $('phoneStatus').classList.toggle('online',!!phone?.connected);
     $('phoneContacts').replaceChildren();
     $('phoneAdd').disabled=!phone;$('phoneCopy').disabled=!phone;
     if(!phone)return;
@@ -138,7 +136,7 @@ async function startPhone() {
         phoneController.addEventListener('connected',phoneConnected);
         if(!restartForUpdate)phoneController.start();
         renderPhone();
-    } catch(error){$('phoneStatus').textContent='呼叫初始化失败';reportError('phone',error);}
+    } catch(error){reportError('phone',error,'呼叫初始化失败');}
 }
 if(native&&location.pathname==='/')void startPhone();
-else { $('phoneStatus').textContent='呼叫功能请使用桌面版';$('phoneAdd').disabled=true;$('phoneCopy').disabled=true; }
+else { $('phoneAdd').disabled=true;$('phoneCopy').disabled=true; }

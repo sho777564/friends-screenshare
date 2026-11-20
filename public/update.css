@@ -1,8 +1,8 @@
 .update-panel {
   margin:25px 0;
   padding:20px;
-  background:#242832;
-  border:1px solid #ffffff12;
+  background:var(--surface-muted);
+  border:1px solid var(--line);
   border-radius:8px
 }
 .update-panel h3 {
@@ -11,7 +11,7 @@
   font-weight:500
 }
 .update-panel #updateStatus {
-  color:#c3cde3;
+  color:var(--muted);
   font-size:11px;
   line-height:1.8
 }
@@ -47,23 +47,23 @@
   gap:12px;
   max-width:520px;
   padding:11px 14px;
-  border:1px solid #afc1ff40;
+  border:1px solid var(--accent-line);
   border-radius:8px;
   box-shadow:0 8px 24px #0005;
-  background:#272f45;
-  color:#dfe8ff;
+  background:var(--surface-raised);
+  color:var(--text);
   font-size:11px
 }
 .update-banner>svg {
   width:16px;
   height:16px;
-  color:#aebfff
+  color:var(--accent)
 }
 .update-banner button {
   white-space:nowrap;
-  background:#b6c6ff;
+  background:var(--accent-solid);
   border-color:transparent;
-  color:#23314f;
+  color:var(--accent-text);
   font-size:12px;
   padding:6px 9px
 }

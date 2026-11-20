@@ -97,19 +97,18 @@ function syncControls(){
     document.body.classList.toggle('in-room',joined);
     const off=!rawMic||effectiveMuted();
     for(const id of ['mic','miniMic']){buttonIcon(id,off?'micOff':'mic');$(id).classList.toggle('muted-button',off);$(id).setAttribute('aria-label',off?'开启麦克风':'静音麦克风');$(id).title=$(id).getAttribute('aria-label')+' · Ctrl+Shift+M';}
-    $('micLabel').textContent=!rawMic?'麦克风已关':settings.inputMode==='ptt'&&!micMuted?'按住空格说话':off?'麦克风已静音':'麦克风已开';
+    if(rawMic&&settings.inputMode==='ptt'&&!micMuted) $('mic').title='按住空格说话 · Ctrl+Shift+M';
     $('myState').textContent=!joined?'离线':deafened?'耳机静音':off?'麦克风静音':'语音已连接';
     for(const id of ['deafen','miniDeafen']){$(id).classList.toggle('muted-button',deafened);$(id).setAttribute('aria-label',deafened?'取消耳机静音':'耳机静音');$(id).title=$(id).getAttribute('aria-label')+' · Ctrl+Shift+D';}
     $('share').classList.toggle('share-on',!!display);$('share').title=display?'停止屏幕共享':'共享屏幕';$('share').setAttribute('aria-label',display?'停止屏幕共享':'共享屏幕');
     $('shareSound').classList.toggle('muted-button',!soundEnabled);$('shareSound').title=soundEnabled?'共享声音：开启':'共享声音：静音';buttonIcon('shareSound',soundEnabled?'speaker':'speakerOff');$('shareSound').setAttribute('aria-label',soundEnabled?'静音共享声音':'开启共享声音');
-    $('shareLabel').textContent=display?(soundEnabled?'正在共享画面和声音':'正在共享画面 · 声音静音'):soundEnabled?'共享时默认带声音':'下次共享不发送声音';
     for(const id of ['mic','miniMic','share','shareSound','deafen','miniDeafen','leave'])$(id).disabled=!joined;
     $('joinOpen').hidden=joined;
     for(const id of ['mic','miniMic'])$(id).setAttribute('aria-pressed',String(!off));
     for(const id of ['deafen','miniDeafen'])$(id).setAttribute('aria-pressed',String(deafened));
     $('share').setAttribute('aria-pressed',String(!!display));
     $('shareSound').setAttribute('aria-pressed',String(soundEnabled));
-    $('localStop').hidden=!display;$('changeShare').hidden=!display;$('localLive').hidden=!display;$('localEmpty').hidden=!!display;
+    $('localStop').hidden=!display;$('changeShare').hidden=!display;$('localLive').hidden=!display;$('localEmpty').hidden=!!display;$('captureStats').hidden=!display;
     renderMembers();
 }
 function publish(speaking = false) {
@@ -129,10 +128,10 @@ function layoutMedia(){
     if(document.body.classList.contains('mini-mode'))return;
     const scroll=document.querySelector('.call-scroll');
     const welcome=document.querySelector('.call-welcome');
-    const tips=document.querySelector('.tips-line');
     const padding=parseFloat(getComputedStyle(scroll).paddingTop)+parseFloat(getComputedStyle(scroll).paddingBottom);
     const screens=$('screens');
-    const shared=screens.querySelectorAll('.has-screen').length;
+    const watching='.has-screen:not(.watch-paused)';
+    const shared=screens.querySelectorAll(watching).length;
     const single=shared+Number(!!display)===1;
     screens.classList.toggle('single-share',single);
     const rowGap=parseFloat(getComputedStyle(screens).rowGap);
@@ -140,13 +139,13 @@ function layoutMedia(){
     const columns=getComputedStyle(screens).gridTemplateColumns.split(' ').length;
     const rows=single?1:Math.max(1,Math.ceil(count/columns));
     const local=screens.querySelector('.local-card');
-    const card=screens.querySelector('.has-screen') || (display?local:[...cards.values()][0]?.card) || local;
+    const card=screens.querySelector(watching) || (display?local:[...cards.values()][0]?.card) || local;
     const chrome=(card?.querySelector('.media-caption')?.offsetHeight||0)+(card?.querySelector('.tile-mixer')?.offsetHeight||0)+2;
-    const voiceCard=single && [...cards.values()].find(item=>!item.card.classList.contains('has-screen'))?.card;
+    const voiceCard=single && [...cards.values()].find(item=>!item.card.matches(watching))?.card;
     const voices=voiceCard?Math.ceil((cards.size-shared)/columns)*(voiceCard.offsetHeight+rowGap):0;
     const remote=$('remotePanel');
     const outer=el=>el.offsetHeight?el.offsetHeight+parseFloat(getComputedStyle(el).marginBlockEnd)+parseFloat(getComputedStyle(el).marginBlockStart):0;
-    const space=scroll.clientHeight-padding-outer(welcome)-outer(tips)-outer(remote)-voices;
+    const space=scroll.clientHeight-padding-outer(welcome)-outer(remote)-voices;
     screens.style.setProperty('--media-max-height',Math.max(100,Math.floor((space-rowGap*(rows-1))/rows-chrome))+'px');
 }
 new ResizeObserver(([entry])=>{
@@ -232,7 +231,7 @@ async function joinRoom(mode='manual'){
     } finally { roomJoinInProgress=false; }
 }
 $('roomForm').onsubmit=event=>{event.preventDefault();run(joinRoom,'room');};
-call.addEventListener('joined',()=>{diagnostic('room','joined',null,{attempt:roomAttempt});joined=true;$('join').disabled=false;$('roomLabel').textContent=roomName($('room').value)+' / 一起看';$('connectionLabel').textContent='等待朋友加入';$('welcomeTitle').textContent='已加入「一起看」';$('welcomeText').textContent='开麦聊聊，或分享你正在看的内容。';syncControls();});
+call.addEventListener('joined',()=>{diagnostic('room','joined',null,{attempt:roomAttempt});joined=true;$('join').disabled=false;$('roomLabel').textContent=roomName($('room').value)+' / 一起看';$('connectionLabel').textContent='等待朋友加入';$('welcomeTitle').textContent='已加入「一起看」';syncControls();});
 call.addEventListener('join-failure',({detail})=>{
     roomJoinFailure=detail.message;
     diagnostic('room','error',null,{attempt:roomAttempt,reason:detail.reason});
@@ -251,7 +250,7 @@ call.addEventListener('status',event=>{
 });
 call.addEventListener('error',e=>reportError('peer',e.detail.error||e.detail.message,e.detail.message,{attempt:roomAttempt}));
 call.addEventListener('warning',e=>reportError('peer',e.detail.message,e.detail.message,{attempt:roomAttempt}));
-call.addEventListener('left',()=>{diagnostic('room','left',null,{attempt:roomAttempt});joined=false;$('join').disabled=false;$('connectionLabel').textContent='已断开';document.querySelector('.connection-panel').classList.remove('connected');$('welcomeTitle').textContent='准备加入房间';$('welcomeText').textContent='分享游戏、视频和屏幕，最多 4 人同时在线。';mediaCleanup=releaseMedia();mediaCleanup.catch(error=>reportError('room',error));syncControls();});
+call.addEventListener('left',()=>{diagnostic('room','left',null,{attempt:roomAttempt});joined=false;$('join').disabled=false;$('connectionLabel').textContent='已断开';document.querySelector('.connection-panel').classList.remove('connected');$('welcomeTitle').textContent='准备加入房间';mediaCleanup=releaseMedia();mediaCleanup.catch(error=>reportError('room',error));syncControls();});
 async function enumerate(){
     const devices=await navigator.mediaDevices.enumerateDevices();
     for(const [id,kind,label] of [['input','audioinput','系统默认麦克风'],['output','audiooutput','系统默认扬声器']]){
@@ -317,8 +316,7 @@ async function stopShare(reason = 'stopped') {
     await call.setTrack('sound', null);
     old?.getTracks().forEach(track => { track.onended = null; track.stop(); });
     $('localVideo').srcObject = null;
-    $('captureStats').textContent = '尚未共享';
-    $('audioStatus').textContent = '共享声音与语音独立处理；不会因说话自动压低媒体音量。';
+    $('captureStats').textContent = '';
     syncControls();
     publish();
 }
@@ -343,7 +341,7 @@ async function capture(source,withAudio){
         $('localVideo').srcObject=new MediaStream([video]);video.onended=()=>run(()=>stopShare('source-ended'));
         localShareId = shareLog.startLocal(shareCapture(), quality());
         syncShareLogControls();
-        $('audioStatus').textContent=audio?'防回音已开启：共享声音排除了本客户端；媒体音量不随说话改变。':'当前只共享画面，可用底部声音按钮开启共享声音。';syncControls();publish();
+        syncControls();publish();
     }catch(error){next.getTracks().forEach(t=>t.stop());throw error;}
 }
 function renderSources(){
@@ -452,7 +450,8 @@ function volumeControl(label, peer, kind) {
         mute.setAttribute('aria-label', (saved.muted ? '取消静音' : '静音') + label);
         mute.setAttribute('aria-pressed', String(saved.muted));
         mute.classList.toggle('muted-button', saved.muted);
-        mixer.volume(peer + ':' + kind, saved.muted ? 0 : saved.volume);
+        const paused = kind === 'sound' && cards.get(peer)?.watchPaused;
+        mixer.volume(peer + ':' + kind, saved.muted || paused ? 0 : saved.volume);
     }
     range.oninput = () => {
         peerVolumes.set(peer, kind, { volume: Number(range.value), muted: false });
@@ -482,12 +481,53 @@ function peerCard({id,name}){
     const live=document.createElement('span');live.className='live-tag';live.textContent='正在共享';live.hidden=true;
     const fullscreen=document.createElement('button');fullscreen.className='tile-action';fullscreen.title='全屏 / Esc 退出';fullscreen.setAttribute('aria-label','全屏查看对方共享');fullscreen.innerHTML=icon('fullscreen');fullscreen.onclick=()=>run(()=>toggleFullscreen(area));
     const mini = document.createElement('button');mini.className='tile-mini';mini.textContent='小窗';mini.setAttribute('aria-label','小窗查看 '+name);mini.onclick=()=>run(()=>enterMini(id));
-    area.append(video,placeholder,live,fullscreen,mini);
+    const watch = document.createElement('button');
+    watch.type = 'button';
+    watch.className = 'watch-toggle';
+    watch.hidden = true;
+    watch.onclick = () => run(() => toggleWatching(id));
+    area.append(video,placeholder,live,fullscreen,mini,watch);
     const caption=document.createElement('div');caption.className='media-caption';const username=document.createElement('strong');username.textContent=name;const status=document.createElement('span');status.textContent='语音已加入';caption.append(makeAvatar(name,true,id),username,status);
     if(typeof bindFileTarget==='function'){bindFileTarget(card,id,name);const send=document.createElement('button');send.className='send-file';send.textContent='发送文件';send.onclick=()=>pickPeerFiles(id);caption.append(send);}
     const controls=document.createElement('div');controls.className='tile-mixer';controls.append(volumeControl('语音音量',id,'voice'),volumeControl('共享声音',id,'sound'));
-    card.append(area,caption,controls);$('screens').append(card);const item={card,video,placeholder,live,status};cards.set(id,item);
+    card.append(area,caption,controls);$('screens').append(card);const item={card,area,video,placeholder,live,status,watch,stream:null,watchPaused:false};cards.set(id,item);
     video.ondblclick=()=>run(()=>toggleFullscreen(area));return item;
+}
+function renderWatch(id, item) {
+    const state = peerState.get(id);
+    const sharing = !!state?.screen;
+    const paused = sharing && item.watchPaused;
+    item.card.classList.toggle('watch-paused', paused);
+    item.watch.hidden = !sharing;
+    const label = paused ? '继续观看' : '暂停观看';
+    if (item.watch.title !== label) {
+        item.watch.title = label;
+        item.watch.setAttribute('aria-label', label);
+        item.watch.innerHTML = icon(paused ? 'play' : 'pause');
+        if (paused) item.watch.append(label);
+    }
+    item.live.hidden = !sharing || paused;
+    item.status.textContent = paused ? '已暂停观看' : sharing ? (state.sound ? '画面与声音' : '画面 · 声音静音') : (state?.mic ? '麦克风已开' : '麦克风静音');
+    const stream = paused ? null : item.stream;
+    if (item.video.srcObject !== stream) {
+        if (!stream) item.video.pause();
+        item.video.srcObject = stream;
+        if (stream) item.video.play().catch(() => {});
+    }
+}
+async function toggleWatching(id) {
+    const item = cards.get(id);
+    if (!item || !peerState.get(id)?.screen) return;
+    item.watchPaused = !item.watchPaused;
+    renderWatch(id, item);
+    refreshPeerVolumes(id);
+    if (item.watchPaused) {
+        if (remoteSession.control?.peer === id) await remoteSession.stopControl('watch-paused');
+        if (remoteSession.requested?.peer === id) await remoteSession.stop('watch-paused');
+        if (fullscreenArea === item.area) await exitFullscreen();
+        if (miniPeer === id) { await native.mini(false); restoreMiniView(); }
+    }
+    layoutMedia();
 }
 async function enterMini(peer) {
     if (!native?.mini) throw new Error('请使用 2.5 桌面版的小窗功能');
@@ -518,7 +558,7 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 native?.onFullscreen?.(value=>{if(!value){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;}});
 call.addEventListener('peer',event=>{peerVolumes.bind(event.detail.id,call.peers.get(event.detail.id)?.identity);peerCard(event.detail);renderMembers();});
 call.addEventListener('compatibility', event => refreshPeerVolumes(event.detail.id));
-call.addEventListener('track',event=>{const {id,kind,stream}=event.detail,item=peerCard(event.detail);if(kind==='screen'){item.video.srcObject=stream;item.video.play().catch(()=>{});}else run(async()=>{await mixer.attach(id+':'+kind,stream);refreshPeerVolumes(id);});});
+call.addEventListener('track',event=>{const {id,kind,stream}=event.detail,item=peerCard(event.detail);if(kind==='screen'){item.stream=stream;renderWatch(id,item);}else run(async()=>{await mixer.attach(id+':'+kind,stream);refreshPeerVolumes(id);});});
 call.addEventListener('peerleft',event=>{const id=event.detail.id;if(miniPeer===id)run(async()=>{await native.mini(false);restoreMiniView();});peerVolumes.forget(id);volumeWidgets.delete(id);});
 call.addEventListener('peerleft',event=>{const id=event.detail.id;if(fullscreenArea&&cards.get(id)?.card.contains(fullscreenArea))run(exitFullscreen);cards.get(id)?.card.remove();cards.delete(id);peerState.delete(id);mixer.remove(id+':voice');mixer.remove(id+':sound');$('emptyPeer').hidden=!!cards.size;renderMembers();});
 call.addEventListener('dataready',publish);
@@ -542,7 +582,26 @@ call.addEventListener('peerleft', ({ detail }) => {
     syncShareLogControls();
 });
 call.addEventListener('signal', ({ detail }) => { void shareLog.event('signal', { state: detail.state }); });
-call.addEventListener('data',event=>{const {id,name,data}=event.detail;if(data.type==='state'){peerState.set(id,{mic:!!data.mic,deafened:!!data.deafened,speaking:!!data.speaking,screen:!!data.screen,sound:!!data.sound});const item=cards.get(id);if(item){item.card.classList.toggle('speaking',!!data.speaking);item.card.classList.toggle('has-screen',!!data.screen);item.placeholder.hidden=!!data.screen;item.live.hidden=!data.screen;item.status.textContent=data.screen?(data.sound?'画面与声音':'画面 · 声音静音'):data.mic?'麦克风已开':'麦克风静音';}renderMembers();}else if(data.type==='chat'&&typeof data.text==='string')appendMessage(name,data.text.slice(0,2000),data.time);});
+call.addEventListener('data', event => {
+    const { id, name, data } = event.detail;
+    if (data.type === 'state') {
+        peerState.set(id, { mic:!!data.mic, deafened:!!data.deafened, speaking:!!data.speaking, screen:!!data.screen, sound:!!data.sound });
+        const item = cards.get(id);
+        if (item) {
+            item.card.classList.toggle('speaking', !!data.speaking);
+            item.card.classList.toggle('has-screen', !!data.screen);
+            item.placeholder.hidden = !!data.screen;
+            if (!data.screen && item.watchPaused) {
+                item.watchPaused = false;
+                refreshPeerVolumes(id);
+            }
+            renderWatch(id, item);
+        }
+        renderMembers();
+    } else if (data.type === 'chat' && typeof data.text === 'string') {
+        appendMessage(name, data.text.slice(0,2000), data.time);
+    }
+});
 function appendMessage(name,text,time=Date.now(),own=false){
     const list=$('messages');
     const follow=own || list.scrollHeight-list.scrollTop-list.clientHeight<32;

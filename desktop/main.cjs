@@ -32,7 +32,7 @@ let launchRoom=roomFromArgs(process.argv);
 const trusted = event => !!mainWindow && event.sender.id===mainWindow.webContents.id && event.senderFrame?.url.startsWith(ORIGIN+'/') && !event.senderFrame.parent;
 const guarded = fn => async (event,...args) => { if (!trusted(event)) throw new Error('Untrusted request'); return fn(event,...args); };
 function createWindow(url,title='同屏') {
-    const win = new BrowserWindow({width:1450,height:940,minWidth:1000,minHeight:680,title,show:!fixture&&!autoDiagnostics&&!videoDiagnostics&&!fileDiagnostics&&!multiDiagnostics&&!uiDiagnostics&&!phoneDiagnostics,frame:false,backgroundColor:'#313338',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
+    const win = new BrowserWindow({width:1450,height:940,minWidth:1000,minHeight:680,title,show:!fixture&&!autoDiagnostics&&!videoDiagnostics&&!fileDiagnostics&&!multiDiagnostics&&!uiDiagnostics&&!phoneDiagnostics,frame:false,backgroundColor:'#1b1b1f',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
     win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     win.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith(ORIGIN+'/'))event.preventDefault();});
     win.loadURL(url); return win;
