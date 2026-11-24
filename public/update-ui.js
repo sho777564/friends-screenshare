@@ -97,3 +97,26 @@ if(native?.updates){
         setInterval(scheduleAutomaticInstall,1000);
     }
 }else{$('updatePanel').hidden=true;}
+
+async function showInstalledRelease() {
+    if (!native?.info) return;
+    const { version } = await native.info();
+    const dismissalKey = 'friendsDismissedRelease-' + version;
+    if (localStorage.getItem(dismissalKey)) return;
+    const response = await fetch('release-notes.json', { cache: 'no-store' });
+    if (!response.ok) return;
+    const release = await response.json();
+    if (release.version !== version || !Array.isArray(release.changes) || !release.changes.length) return;
+    $('installedReleaseTitle').textContent = version + ' 本次更新';
+    $('installedReleaseChanges').replaceChildren(...release.changes.map(change => {
+        const item = document.createElement('li');
+        item.textContent = change;
+        return item;
+    }));
+    $('dismissInstalledRelease').onclick = () => {
+        $('installedRelease').hidden = true;
+        localStorage.setItem(dismissalKey, '1');
+    };
+    $('installedRelease').hidden = false;
+}
+void showInstalledRelease().catch(error => console.warn('Could not show installed release notes', error));

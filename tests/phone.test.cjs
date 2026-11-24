@@ -14,3 +14,23 @@ test('contact identity, key and alias survive restarts while copied codes contai
     assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,signature,packet),true);
     assert.throws(()=>readContact('friends-contact:'+Buffer.from(JSON.stringify({...copy,key:{...copy.key,d:'private'}})).toString('base64url')),/格式/);
 });
+
+test('removing a room contact remark restores the original name and preserves their callback identity', async () => {
+    const saved = storage();
+    const options = { storage: saved, identity: crypto.randomUUID() };
+    const phone = await Phone.create(options);
+    const friend = await Phone.create({ storage: storage(), identity: crypto.randomUUID(), getName: () => '小林' });
+    await assert.rejects(phone.addRoomContact(friend.code(), crypto.randomUUID()), /不一致/);
+    await phone.addRoomContact(friend.code(), friend.self.id);
+    phone.rename(friend.self.id, '北京同学');
+    const forged = { ...friend.self, inbox: crypto.randomUUID() };
+    const forgedCode = 'friends-contact:' + Buffer.from(JSON.stringify(forged)).toString('base64url');
+    await assert.rejects(phone.addRoomContact(forgedCode, friend.self.id), /好友码已变化/);
+    await phone.addRoomContact(friend.code(), friend.self.id);
+    const restarted = await Phone.create(options);
+    assert.equal(restarted.contacts.get(friend.self.id).name, '北京同学');
+    assert.equal(restarted.rename(friend.self.id, '').name, '小林');
+    const contact = restarted.contacts.get(friend.self.id);
+    assert.deepEqual(contact.key, friend.self.key);
+    assert.equal(contact.inbox, friend.self.inbox);
+});

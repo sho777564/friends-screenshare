@@ -416,7 +416,7 @@
             channel.onopen = () => {
                 channel.send(JSON.stringify({
                     type: 'hello', version: '2.5.0', identity: this.uuid,
-                    participants: MAX_PARTICIPANTS, control: 2, chatImage: 1,
+                    participants: MAX_PARTICIPANTS, control: 2, chatImage: 1, friendRequests: 1,
                 }));
                 this.emit('dataready', { id: p.id });
             };
@@ -429,13 +429,14 @@
                     p.clientVersion = data.version;
                     p.controlProtocol = data.control;
                     p.chatImage = data.chatImage === 1;
+                    p.friendRequests = data.friendRequests === 1;
                     if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.identity || '')) p.identity = data.identity;
                     this.emit('compatibility', { id: p.id, version: data.version, control: data.control });
                 } else if (data.type === 'viewer' && typeof data.video === 'boolean') {
                     if (p.remoteVideoEnabled === data.video) return;
                     p.remoteVideoEnabled = data.video;
                     this.applySenderQuality(p, 'screen').catch(error => this.fail(error));
-                } else if (['chat', 'state', 'control'].includes(data.type)) {
+                } else if (['chat', 'state', 'control', 'friend-request'].includes(data.type)) {
                     this.emit('data', { id: p.id, name: p.name, data });
                 }
             };
@@ -445,10 +446,15 @@
             let sent=false;for(const p of this.peers.values())if(p.channel?.readyState==='open'){p.channel.send(value);sent=true;}return sent;
         }
         requestPeerVideo(id, enabled) {
+            return this.sendPeerData(id, { type: 'viewer', video: enabled });
+        }
+        sendPeerData(id, payload) {
             const channel = this.peers.get(id)?.channel;
             if (channel?.readyState !== 'open') return false;
             try {
-                channel.send(JSON.stringify({ type: 'viewer', video: enabled }));
+                const value = JSON.stringify(payload);
+                if (value.length > 10000) return false;
+                channel.send(value);
                 return true;
             } catch {
                 return false;

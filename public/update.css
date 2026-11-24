@@ -81,3 +81,37 @@
     max-width:calc(100vw - 260px)
   }
 }
+
+.installed-release {
+  position:fixed;
+  z-index:29;
+  left:14px;
+  bottom:76px;
+  width:min(348px, calc(100vw - 28px));
+  padding:13px 14px 14px;
+  border:1px solid var(--line-strong);
+  border-radius:8px;
+  background:var(--surface-raised);
+  box-shadow:0 8px 26px #0005;
+  color:var(--text)
+}
+.installed-release-heading {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px
+}
+.installed-release-heading h2 {
+  margin:0;
+  font-size:14px;
+  font-weight:600
+}
+.installed-release ul {
+  margin:7px 0 0;
+  padding-left:18px;
+  font-size:12px;
+  line-height:1.55;
+  color:var(--text-secondary)
+}
+.installed-release li+li {margin-top:4px}
+.mini-mode .installed-release {display:none}

@@ -2479,3 +2479,32 @@ body:not(.in-room) #joinOpen { width:min(340px,100%); justify-content:center; }
 .chat-image-heading {display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:10px;}
 .chat-image-heading h2 {margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;}
 #chatImageFull {display:block;max-width:min(1100px, calc(100vw - 76px));max-height:calc(100vh - 124px);object-fit:contain;}
+
+.friend-avatar-menu {
+  position:fixed;
+  right:auto;
+  bottom:auto;
+  min-width:156px;
+  margin:0;
+  padding:4px;
+  border:1px solid var(--line-strong);
+  border-radius:6px;
+  background:var(--surface-raised);
+  box-shadow:0 6px 17px #0005;
+  color:var(--text)
+}
+.friend-avatar-menu button {
+  display:flex;
+  align-items:center;
+  width:100%;
+  min-height:32px;
+  gap:8px;
+  padding:6px 9px;
+  border:0;
+  background:transparent;
+  text-align:left;
+  font-size:12px
+}
+.friend-avatar-menu button:enabled:is(:hover,:focus-visible) {background:var(--surface-muted)}
+.friend-avatar-menu button svg {width:15px;height:15px;color:var(--muted)}
+#friendRequestText {color:var(--text-secondary);font-size:13px;line-height:1.55}

@@ -203,14 +203,14 @@ chatForm.onsubmit = event => {
     chatInput.focus();
 };
 
-call.addEventListener('data', ({ detail: { name, data } }) => {
-    if (data.type === 'chat' && typeof data.text === 'string') appendMessage(name, data.text.slice(0, 2000), data.time);
+call.addEventListener('data', ({ detail: { id, name, data } }) => {
+    if (data.type === 'chat' && typeof data.text === 'string') appendMessage(displayPeerName(id, name), data.text.slice(0, 2000), data.time);
 });
 call.addEventListener('imagechannel', ({ detail: { id, name, channel } }) => {
     if (!call.peers.get(id)?.chatImage || incomingImages.has(id)) return channel.close();
     incomingImages.set(id, channel);
     FriendsChatImages.receive(channel, (image, meta) => {
-        if (incomingImages.get(id) === channel) appendMessage(name, meta.text, meta.time, false, image);
+        if (incomingImages.get(id) === channel) appendMessage(displayPeerName(id, name), meta.text, meta.time, false, image);
         else URL.revokeObjectURL(image.url);
     }, () => {
         if (incomingImages.get(id) === channel) incomingImages.delete(id);

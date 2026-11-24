@@ -6,6 +6,7 @@ const electron = require('electron');
 const { app, BrowserWindow } = electron;
 app.disableHardwareAcceleration();
 app.getVersion = () => require('../package.json').version;
+const release = require('../public/release-notes.json');
 const reviewRoot = path.resolve(__dirname, '../.run/ui-review');
 const directory = path.join(reviewRoot, process.argv.includes('--baseline') ? 'before' : 'review');
 fs.mkdirSync(directory, { recursive: true });
@@ -52,6 +53,11 @@ async function run() {
         await pause(250);
         fs.writeFileSync(path.join(directory, name + '.png'), (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
     }
+    await evaluate('showInstalledRelease()');
+    await check('Installed release notes are in the lower left with a dismiss button', "(() => { const notice=$('installedRelease'); const box=notice.getBoundingClientRect(); return !notice.hidden && box.left<40 && innerHeight-box.bottom<100 && $('installedReleaseChanges').children.length==="+release.changes.length+"; })()");
+    await shot('26-release-notes');
+    await evaluate("$('dismissInstalledRelease').click();showInstalledRelease()");
+    await check('Dismissing release notes persists for the exact version', "$('installedRelease').hidden && localStorage.getItem('friendsDismissedRelease-"+release.version+"')==='1'");
     await shot('01-idle');
     await check('Idle primary action and invitation are visible',"!$('joinOpen').hidden && $('emptyInvite').getBoundingClientRect().height>0");
     await check('Icon-only call dock retains accessible button names', "['mic','deafen','share','shareSound','leave'].every(id=>$(id).getAttribute('aria-label')) && !document.querySelector('.control-item > span, .controls-labels, #phoneStatus, .header-subtitle, .tips-line')");
@@ -231,6 +237,48 @@ async function run() {
     await check('Clicking an image opens the full preview', "imageViewer.open && $('chatImageFull').naturalWidth===1280");
     await shot('25-image-viewer');
     await evaluate("imageViewer.close();for(const pc of imageFixturePeers)pc.close()");
+    await evaluate(`(async()=>{
+        phoneController.contacts.clear();
+        const peer=call.peers.get('preview-lin');
+        window.contactFixture=await FriendsPhone.Phone.create({
+            identity:crypto.randomUUID(),
+            storage:{getItem:()=>null,setItem(){}},
+            getName:()=>peer.name,
+        });
+        peer.identity=contactFixture.self.id;
+        peer.friendRequests=true;
+        peer.channel={readyState:'open',send(value){window.contactWire=JSON.parse(value);}};
+        const avatar=cards.get(peer.id).card.querySelector('.media-caption .avatar');
+        avatar.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:500,clientY:400}));
+    })()`);
+    await check('Context-clicking a remote avatar opens Add Friend', "friendMenu.matches(':popover-open') && $('friendActionLabel').textContent==='添加好友'");
+    await shot('27-friend-menu');
+    await evaluate("friendAction.click()");
+    await check('A friend request is sent to that peer and does not add them before consent', "contactWire.action==='offer' && !phoneController.contacts.has(contactFixture.self.id)");
+    await evaluate("(async()=>{await receiveFriendRequest({id:'preview-lin',data:{type:'friend-request',action:'answer',id:contactWire.id,code:contactFixture.code()}})})()");
+    await check('The matching friend acceptance stores a callable contact', "phoneController.contacts.get(contactFixture.self.id)?.inbox===contactFixture.self.inbox");
+    await evaluate(`{
+        const avatar=cards.get('preview-lin').card.querySelector('.media-caption .avatar');
+        avatar.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:500,clientY:400}));
+        friendAction.click();
+        $('friendRemark').value='北京同学';
+        $('friendRemarkForm').requestSubmit();
+    }`);
+    await check('Renaming from the avatar updates the room and persisted phone book', "cards.get('preview-lin').username.textContent==='北京同学' && [...document.querySelectorAll('#members .member-name')].some(el=>el.textContent==='北京同学') && JSON.parse(localStorage.getItem('friendsPhoneContacts'))[0].name==='北京同学'");
+    await evaluate(`(async()=>{
+        const peer=call.peers.get('preview-qing');
+        window.incomingContactFixture=await FriendsPhone.Phone.create({identity:crypto.randomUUID(),storage:{getItem:()=>null,setItem(){}},getName:()=>peer.name});
+        peer.identity=incomingContactFixture.self.id;
+        peer.friendRequests=true;
+        peer.channel={readyState:'open',send(value){window.contactWire=JSON.parse(value);}};
+        await receiveFriendRequest({id:peer.id,data:{type:'friend-request',action:'offer',id:crypto.randomUUID(),code:incomingContactFixture.code()}});
+    })()`);
+    await check('Incoming requests explicitly wait for consent', "friendRequestDialog.open && !phoneController.contacts.has(incomingContactFixture.self.id)");
+    await shot('28-friend-request');
+    await evaluate("$('friendRequestDecline').click()");
+    await check('Declining does not save the contact or share a code', "!phoneController.contacts.has(incomingContactFixture.self.id) && contactWire.action==='answer' && !contactWire.code");
+    await evaluate("(async()=>{await receiveFriendRequest({id:'preview-qing',data:{type:'friend-request',action:'offer',id:crypto.randomUUID(),code:incomingContactFixture.code()}});$('friendRequestAccept').click();for(let i=0;friendRequestDialog.open&&i<50;i++)await new Promise(resolve=>setTimeout(resolve,20));})()");
+    await check('Accepting saves the contact and returns the public friend code', "phoneController.contacts.has(incomingContactFixture.self.id) && FriendsPhone.readContact(contactWire.code).id===phoneController.self.id");
     await check('No horizontal page overflow after native window transitions',"document.documentElement.scrollWidth===innerWidth");
     fs.writeFileSync(path.join(directory,'verification.json'),JSON.stringify({passed:true,checks},null,2));
     await evaluate("previewAudio.close()");

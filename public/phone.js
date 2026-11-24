@@ -46,6 +46,7 @@
                 const contacts = JSON.parse(options.storage.getItem('friendsPhoneContacts') || '[]');
                 for (const value of contacts.slice(0,16)) {
                     const contact = readContact(contactCode(value));
+                    if (typeof value.originalName === 'string') contact.originalName = name(value.originalName);
                     if (contact.id !== phone.self.id) phone.contacts.set(contact.id,contact);
                 }
             } catch {}
@@ -66,10 +67,45 @@
             if (contact.id===this.self.id) throw new Error('这是你自己的好友码');
             await this.publicKey(contact);
             if (!this.contacts.has(contact.id) && this.contacts.size>=16) throw new Error('联系人已满，最多保存 16 人');
-            if (alias?.trim()) contact.name=name(alias);
-            this.contacts.set(contact.id,contact);this.saveContacts();
+            if (alias?.trim()) {
+                contact.originalName = contact.name;
+                contact.name = name(alias);
+            }
+            return this.rememberContact(contact);
+        }
+        rememberContact(contact) {
+            const previous = this.contacts.get(contact.id);
+            this.contacts.set(contact.id, contact);
+            try { this.saveContacts(); }
+            catch (error) {
+                if (previous) this.contacts.set(contact.id, previous);
+                else this.contacts.delete(contact.id);
+                throw error;
+            }
             if (this.socket?.connected) this.joinInbox(contact);
-            this.emit('state');return contact;
+            this.emit('state');
+            return contact;
+        }
+        rename(id, alias, peerName) {
+            const contact = this.contacts.get(id);
+            if (!contact) throw new Error('该联系人已移除');
+            const originalName = peerName ? name(peerName) : contact.originalName || contact.name;
+            const updated = { ...contact, originalName, name: alias?.trim() ? name(alias) : originalName };
+            return this.rememberContact(updated);
+        }
+        async addRoomContact(code, expectedId) {
+            const candidate = readContact(code);
+            if (candidate.id !== expectedId || candidate.id === this.self.id) throw new Error('好友身份与房间成员不一致');
+            await this.publicKey(candidate);
+            const saved = this.contacts.get(candidate.id);
+            if (saved) {
+                if (saved.inbox !== candidate.inbox || JSON.stringify(saved.key) !== JSON.stringify(candidate.key)) {
+                    throw new Error('对方的好友码已变化，请核对后手动添加');
+                }
+                return saved;
+            }
+            if (this.contacts.size>=16) throw new Error('联系人已满，最多保存 16 人');
+            return this.rememberContact(candidate);
         }
         async remove(id) {
             if (this.pending?.friend.id===id) await this.cancel();

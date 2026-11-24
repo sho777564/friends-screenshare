@@ -206,6 +206,13 @@
         </section>
       </aside>
     </div>
+    <section id="installedRelease" class="installed-release" aria-labelledby="installedReleaseTitle" aria-live="polite" hidden>
+      <div class="installed-release-heading">
+        <h2 id="installedReleaseTitle">本次更新</h2>
+        <button id="dismissInstalledRelease" type="button" class="icon-button" title="关闭更新说明" aria-label="关闭更新说明" data-icon="close"></button>
+      </div>
+      <ul id="installedReleaseChanges"></ul>
+    </section>
     <div id="updateBanner" class="update-banner" hidden>
       <span data-icon="download"></span>
       <span id="updateBannerText"></span>
@@ -454,6 +461,25 @@
         <button class="primary wide">保存联系人</button>
       </form>
     </dialog>
+    <div id="friendAvatarMenu" class="friend-avatar-menu" role="menu" aria-label="联系人操作" tabindex="-1" popover="manual">
+      <button id="friendAvatarAction" type="button" role="menuitem"><span id="friendActionIcon"></span><span id="friendActionLabel"></span></button>
+    </div>
+    <dialog id="friendRemarkDialog" class="room-dialog" aria-labelledby="friendRemarkHeading">
+      <button class="dialog-close" data-close="friendRemarkDialog" aria-label="关闭"><span data-icon="close"></span></button>
+      <form id="friendRemarkForm">
+        <h2 id="friendRemarkHeading">编辑备注</h2>
+        <label>备注名称<input id="friendRemark" maxlength="32" placeholder="留空使用对方的昵称" autofocus></label>
+        <button class="primary wide">保存备注</button>
+      </form>
+    </dialog>
+    <dialog id="friendRequestDialog" class="room-dialog" aria-labelledby="friendRequestHeading">
+      <h2 id="friendRequestHeading">好友请求</h2>
+      <p id="friendRequestText"></p>
+      <div class="phone-call-actions">
+        <button id="friendRequestAccept" type="button" class="primary">接受请求</button>
+        <button id="friendRequestDecline" type="button">拒绝</button>
+      </div>
+    </dialog>
     <dialog id="phoneCallDialog" class="phone-call-dialog" aria-labelledby="phoneCallTitle">
       <div id="phoneCallAvatar" class="call-avatar" aria-hidden="true">同</div>
       <h2 id="phoneCallTitle">同屏来电</h2>
@@ -488,6 +514,7 @@
     <script src="remote-ui.js"></script>
     <script src="phone.js"></script>
     <script src="phone-ui.js"></script>
+    <script src="friend-menu.js"></script>
     <script src="update-ui.js"></script>
     <script src="ui-test.js"></script>
   </body>

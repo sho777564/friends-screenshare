@@ -123,7 +123,19 @@ function makeAvatar(name,small=true,peer=null){const el=document.createElement('
     let hash=0;
     for(const char of name||'同') hash=(hash*31+char.codePointAt(0))>>>0;
     el.dataset.tone=colors[hash%colors.length];
-    if(peer&&typeof bindFileTarget==='function')bindFileTarget(el,peer,name,true);return el;}
+    if (peer) {
+        el.dataset.friendPeer = peer;
+        el.setAttribute('aria-haspopup', 'menu');
+        el.setAttribute('aria-keyshortcuts', 'Shift+F10');
+        if (typeof bindFileTarget === 'function') bindFileTarget(el,peer,name,true);
+        el.title += ' · 右键管理好友';
+    }
+    return el;
+}
+function displayPeerName(id, original) {
+    const identity = call.peers.get(id)?.identity;
+    return typeof phoneController !== 'undefined' && phoneController?.contacts.get(identity)?.name || original;
+}
 function layoutMedia(){
     if(document.body.classList.contains('mini-mode'))return;
     const scroll=document.querySelector('.call-scroll');
@@ -157,7 +169,7 @@ function renderMembers(){
     $('screens').dataset.peers=String(cards.size);
     $('screens').classList.toggle('self-sharing',!!display);
     requestAnimationFrame(layoutMedia);
-    const names=[...(joined?[{id:'me',name:$('name').value||'我',own:true,mic:!!rawMic&&!effectiveMuted(),deafened}]:[]),...[...call.peers.values()].map(p=>({id:p.id,name:p.name,...peerState.get(p.id)}))];
+    const names=[...(joined?[{id:'me',name:$('name').value||'我',own:true,mic:!!rawMic&&!effectiveMuted(),deafened}]:[]),...[...call.peers.values()].map(p=>({id:p.id,name:displayPeerName(p.id,p.name),...peerState.get(p.id)}))];
     $('memberCount').textContent=String(names.length);$('members').replaceChildren();$('channelMembers').replaceChildren();
     for(const person of names){
         const row=document.createElement('div');row.className='member'+(person.speaking?' speaking':'');row.dataset.member=person.id;
@@ -475,6 +487,7 @@ function refreshPeerVolumes(peer) {
 }
 function peerCard({id,name}){
     if(cards.has(id))return cards.get(id);$('emptyPeer').hidden=true;
+    name=displayPeerName(id,name);
     const card=document.createElement('article');card.className='media-card';const area=document.createElement('div');area.className='video-area';
     const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;
     const placeholder=document.createElement('div');placeholder.className='avatar-placeholder';placeholder.append(makeAvatar(name,false,id));const title=document.createElement('p');title.textContent=name;placeholder.append(title);
@@ -490,7 +503,7 @@ function peerCard({id,name}){
     const caption=document.createElement('div');caption.className='media-caption';const username=document.createElement('strong');username.textContent=name;const status=document.createElement('span');status.textContent='语音已加入';caption.append(makeAvatar(name,true,id),username,status);
     if(typeof bindFileTarget==='function'){bindFileTarget(card,id,name);const send=document.createElement('button');send.className='send-file';send.textContent='发送文件';send.onclick=()=>pickPeerFiles(id);caption.append(send);}
     const controls=document.createElement('div');controls.className='tile-mixer';controls.append(volumeControl('语音音量',id,'voice'),volumeControl('共享声音',id,'sound'));
-    card.append(area,caption,controls);$('screens').append(card);const item={card,area,video,placeholder,live,status,watch,stream:null,watchPaused:false};cards.set(id,item);
+    card.append(area,caption,controls);$('screens').append(card);const item={card,area,video,placeholder,live,status,watch,username,placeholderName:title,stream:null,watchPaused:false};cards.set(id,item);
     video.ondblclick=()=>run(()=>toggleFullscreen(area));return item;
 }
 let viewerWindow = { visible: true, focused: true };
@@ -608,7 +621,10 @@ async function toggleFullscreen(area){
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&!native){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;updateRemoteViews();}});
 native?.onFullscreen?.(value=>{if(!value){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;updateRemoteViews();}});
 call.addEventListener('peer',event=>{peerVolumes.bind(event.detail.id,call.peers.get(event.detail.id)?.identity);peerCard(event.detail);renderMembers();});
-call.addEventListener('compatibility', event => refreshPeerVolumes(event.detail.id));
+call.addEventListener('compatibility', event => {
+    refreshPeerVolumes(event.detail.id);
+    if (typeof refreshRoomContactNames === 'function') refreshRoomContactNames();
+});
 call.addEventListener('track',event=>{const {id,kind,stream}=event.detail,item=peerCard(event.detail);if(kind==='screen'){item.stream=stream;renderWatch(id,item);}else run(async()=>{await mixer.attach(id+':'+kind,stream);refreshPeerVolumes(id);});});
 call.addEventListener('peerleft',event=>{const id=event.detail.id;if(miniPeer===id)run(async()=>{await native.mini(false);restoreMiniView();});peerVolumes.forget(id);volumeWidgets.delete(id);});
 call.addEventListener('peerleft',event=>{const id=event.detail.id;if(fullscreenArea&&cards.get(id)?.card.contains(fullscreenArea))run(exitFullscreen);cards.get(id)?.card.remove();cards.delete(id);peerState.delete(id);mixer.remove(id+':voice');mixer.remove(id+':sound');$('emptyPeer').hidden=!!cards.size;renderMembers();});
