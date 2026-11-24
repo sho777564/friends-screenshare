@@ -3,7 +3,7 @@ const publicSignal=new URLSearchParams(location.search).has('public');
 const report={started:new Date().toISOString(),scope:'Four native WebRTC endpoints on ONE PC; local signaling, generated files/audio/video, simulated OS input sink. Not a four-PC WAN quality test.',checks:[]};
 const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const check=(name,pass,detail={})=>{report.checks.push({name,pass:!!pass,...detail});$('results').textContent=JSON.stringify(report,null,2);if(!pass)throw new Error(name);};
-async function until(fn,what,ms=30000){const end=Date.now()+ms;while(Date.now()<end){if(fn())return;await sleep(25);}throw new Error('Timeout: '+what);}
+async function until(fn,what,ms=30000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await sleep(25);}throw new Error('Timeout: '+what);}
 async function run(){const clients=[],managers=[],remotes=[],tracks=[],timers=[];let ctx;
  try{
   if(publicSignal)report.scope=report.scope.replace('local signaling','PUBLIC MiroTalk signaling in a generated random test room');
@@ -55,6 +55,46 @@ async function run(){const clients=[],managers=[],remotes=[],tracks=[],timers=[]
   check('Fresh loss cancels the probe immediately',
    guardedPeer.tx.screen.sender.getParameters().encodings[0].maxBitrate <= 151200 && tightLink.videoBudgetReason === 'loss');
   for (const peer of guarded.peers.values()) { peer.videoBudget = new FriendsMedia.VideoBudget(); await guarded.applySenderQuality(peer); }
+  const countDecoded = async pc => {
+   const inbound = [...(await pc.getStats()).values()].filter(report => report.type === 'inbound-rtp');
+   return { frames: inbound.find(report => report.kind === 'video')?.framesDecoded || 0,
+    audio: inbound.filter(report => report.kind === 'audio').map(report => report.bytesReceived) };
+  };
+  const otherViewer = clients[2].peers.get(ids[0]).pc;
+  clients[1].requestPeerVideo(ids[0], false);
+  await until(() => guardedPeer.tx.screen.sender.getParameters().encodings.every(encoding => !encoding.active), 'pause requested video');
+  await sleep(700);
+  const [paused, otherBefore] = await Promise.all([countDecoded(inbound), countDecoded(otherViewer)]);
+  await sleep(900);
+  const [stillPaused, otherAfter] = await Promise.all([countDecoded(inbound), countDecoded(otherViewer)]);
+  check('One viewer pauses video decoding while both audio tracks and the other viewer keep receiving',
+   paused.frames > 0 && paused.frames === stillPaused.frames && paused.audio.length === 2
+   && stillPaused.audio.every((count, index) => count > paused.audio[index]) && otherAfter.frames > otherBefore.frames,
+   { paused, stillPaused, otherBefore, otherAfter });
+  clients[1].requestPeerVideo(ids[0], true);
+  await until(async () => (await countDecoded(inbound)).frames > stillPaused.frames, 'resume requested video');
+  check('Resuming uses the same peer connection and restarts decoded frames', clients[1].peers.get(ids[0]).pc === inbound
+   && (await countDecoded(inbound)).frames > stillPaused.frames);
+
+  const canvas = document.querySelector('canvas');
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  const buffer = await blob.arrayBuffer();
+  const meta = { size: buffer.byteLength, mime: blob.type, name: '合成.png', text: '图像测试', time: Date.now() };
+  const images = [];
+  clients.slice(1).forEach(client => client.addEventListener('imagechannel', ({detail: {channel}}) => {
+   FriendsChatImages.receive(channel, (image, header) => {
+    images.push({ image, header });
+    URL.revokeObjectURL(image.url);
+   }, () => {});
+  }));
+  await Promise.all(ids.slice(1).map(id => FriendsChatImages.send(guarded.openImageChannel(id), buffer, meta, 384*1024)));
+  check('Three peers acknowledge the same decoded inline image and caption', images.length === 3
+   && images.every(({image,header}) => image.width === 640 && image.height === 360 && header.text === meta.text));
+  let invalidImageRejected = false;
+  try {
+   await FriendsChatImages.send(guarded.openImageChannel(ids[1]), buffer, {...meta,mime:'image/jpeg'}, 384*1024);
+  } catch { invalidImageRejected = true; }
+  check('A mismatched image type is rejected without a preview', invalidImageRejected && images.length === 3);
   const messages=clients.map(()=>[]);clients.forEach((c,i)=>c.addEventListener('data',e=>{if(e.detail.data.type==='chat')messages[i].push(e.detail.data.text);}));clients.forEach((c,i)=>c.sendData({type:'chat',text:ids[i]}));await until(()=>messages.every(m=>m.length===3),'group chat');check('Every group chat reaches exactly the other three members',messages.every((m,i)=>m.sort().join('')===ids.filter((_,j)=>i!==j).sort().join('')));
   const io=window.friendsDesktop.files;for(const c of clients){const m=new FriendsFiles.Transfers(c,io,{rate:()=>1024*1024});managers.push(m);m.addEventListener('update',e=>{if(e.detail.direction==='receive'&&e.detail.status==='offered')m.accept(e.detail.id);});}
   const baseline=await Promise.all(clients.flatMap(c=>[...c.peers.values()].map(p=>p.pc.getStats())));

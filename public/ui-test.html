@@ -191,7 +191,15 @@
               <strong>聊天，从这里开始</strong>
             </div>
           </div>
+          <div class="chat-image-draft" id="chatImageDraft" hidden>
+            <img id="chatImagePreview" alt="">
+            <span id="chatImageName"></span>
+            <button id="removeChatImage" type="button" title="移除图片" aria-label="移除图片" data-icon="close"></button>
+          </div>
+          <p id="chatImageProgress" class="chat-image-progress" role="status" hidden></p>
           <form id="chatForm">
+            <input type="file" id="chatImagePicker" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            <button id="addChatImage" type="button" title="添加图片（也可以粘贴或拖入）" aria-label="添加图片" data-icon="plus"></button>
             <input id="chatInput" aria-label="发送消息" placeholder="发条消息…" maxlength="2000" autocomplete="off">
             <button id="sendMessage" title="发送消息" aria-label="发送消息" disabled data-icon="send"></button>
           </form>
@@ -455,6 +463,13 @@
         <button id="phoneCancel">拒绝</button>
       </div>
     </dialog>
+    <dialog id="chatImageViewer" aria-labelledby="chatImageTitle">
+      <div class="chat-image-heading">
+        <h2 id="chatImageTitle">图片</h2>
+        <button class="icon-button" data-close="chatImageViewer" title="关闭图片" aria-label="关闭图片" data-icon="close"></button>
+      </div>
+      <img id="chatImageFull" alt="">
+    </dialog>
     <script src="socket.io.min.js"></script>
     <script src="media.js"></script>
     <script src="audio.js"></script>
@@ -466,6 +481,8 @@
     <script src="peer-audio.js"></script>
     <script src="diagnostics.js"></script>
     <script src="app.js"></script>
+    <script src="chat-images.js"></script>
+    <script src="chat-ui.js"></script>
     <script src="file-ui.js"></script>
     <script src="remote.js"></script>
     <script src="remote-ui.js"></script>

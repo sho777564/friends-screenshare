@@ -42,7 +42,9 @@ async function run() {
     const evaluate = code => win.webContents.executeJavaScript(code);
     const checks=[];
     const check=async(name,code)=>{const pass=await evaluate(code);checks.push({name,pass:!!pass});if(!pass)throw new Error(name);};
-    await evaluate("localStorage.setItem('friendsAutoUpdate','off')");
+
+    // The review captures a hidden native window. Model an attentive viewer except in the window-state checks.
+    await evaluate("updateViewerWindow({visible:true,focused:true});localStorage.setItem('friendsAutoUpdate','off')");
     await evaluate("roomBoot.then(() => { phoneController?.stop(); })");
     await win.webContents.insertCSS('*,*::before,*::after{animation:none!important;transition:none!important}');
     async function shot(name, width = 1450, height = 940) {
@@ -102,10 +104,21 @@ async function run() {
     await check('Independent mute reaches the real audio mixer without changing media volume',"mixer.entries.get('preview-lin:voice').volume===0 && mixer.entries.get('preview-lin:sound').volume===.4");
     await evaluate("cards.get('preview-lin').card.querySelector('.volume-control button').click()");
     await check('Unmute restores the selected voice gain',"mixer.entries.get('preview-lin:voice').volume===1.75");
+    win.webContents.send('desktop:viewer-window', { visible: true, focused: false });
+    await pause(850);
+    await check('Alt-Tab suspends the remote video but preserves both audio gains', "!cards.get('preview-lin').video.srcObject && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===.4");
+    win.webContents.send('desktop:viewer-window', { visible: true, focused: true });
+    await check('Focusing the viewer restores the video on the same stream', "cards.get('preview-lin').video.srcObject===previewStream");
+    win.webContents.send('desktop:viewer-window', { visible: false, focused: false });
+    await check('Minimize or tray hide immediately detaches video', "!cards.get('preview-lin').video.srcObject");
+    win.webContents.send('desktop:viewer-window', { visible: true, focused: true });
     await check('Shared audio cannot exceed 100 percent',"cards.get('preview-lin').card.querySelectorAll('input')[1].max==='100'");
     await evaluate("cards.get('preview-lin').watch.click()");
+    win.webContents.send('desktop:viewer-window', { visible: false, focused: false });
+    win.webContents.send('desktop:viewer-window', { visible: true, focused: true });
+    await check('Restoring the window leaves explicitly exited shares stopped', "cards.get('preview-lin').watchPaused && !cards.get('preview-lin').video.srcObject");
+    await check('Pausing detaches video and mutes shared audio while voice and room stay active', "(()=>{const item=cards.get('preview-lin');return joined && item.watchPaused && !item.video.srcObject && item.watch.textContent==='观看共享' && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===0;})()");
     await shot('21-paused-view');
-    await check('Pausing detaches video and mutes shared audio while voice and room stay active', "(()=>{const item=cards.get('preview-lin');return joined && item.watchPaused && !item.video.srcObject && item.watch.textContent==='继续观看' && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===0;})()");
     await check('Resume stays centered in the compact paused preview', "(()=>{const item=cards.get('preview-lin');const area=item.area.getBoundingClientRect(), button=item.watch.getBoundingClientRect();return Math.abs((button.left+button.right)-(area.left+area.right))<2 && button.height>0;})()");
     await evaluate("call.emit('track',{id:'preview-lin',name:'小林',kind:'screen',stream:previewStream});call.emit('data',{id:'preview-lin',name:'小林',data:{type:'state',screen:true,sound:true,mic:true}})");
     await check('New track and state updates respect the paused view', "cards.get('preview-lin').watchPaused && !cards.get('preview-lin').video.srcObject");
@@ -177,6 +190,47 @@ async function run() {
     await check('A typed message enables sending', "!$('sendMessage').disabled");
     await evaluate("$('chatForm').requestSubmit()");
     await check('Send clears the draft and disables the empty composer', "$('sendMessage').disabled && !$('chatInput').value && $('messages').lastElementChild.querySelector('p').textContent==='收到'");
+    await evaluate(`(async()=>{
+        const blob=await new Promise(resolve=>previewCanvas.toBlob(resolve,'image/png'));
+        const files=new DataTransfer();files.items.add(new File([blob],'共享截图.png',{type:blob.type}));
+        chatInput.dispatchEvent(new ClipboardEvent('paste',{clipboardData:files,cancelable:true}));
+        window.imageFixture=files.files[0];
+    })()`);
+    await pause(180);
+    await check('Clipboard image creates an attachment preview and enables Send', "!chatDraft.hidden && !$('sendMessage').disabled && draftImage.file.name==='共享截图.png'");
+    await shot('23-attachment');
+    await evaluate(`(async()=>{
+        const rtc = new RTCPeerConnection(), remote = new RTCPeerConnection();
+        window.imageFixturePeers = [rtc, remote];
+        rtc.onicecandidate=e=>e.candidate && remote.addIceCandidate(e.candidate);
+        remote.onicecandidate=e=>e.candidate && rtc.addIceCandidate(e.candidate);
+        const receiver=call.peers.get('preview-lin');
+        receiver.chatImage=true;receiver.channel={readyState:'open',send(){}};
+        rtc.ondatachannel=event=>{if(event.channel.label==='friends-chat-image-v1')call.emit('imagechannel',{id:receiver.id,name:receiver.name,channel:event.channel});};
+        const received=new Promise(resolve=>remote.ondatachannel=event=>FriendsChatImages.receive(event.channel,(image,meta)=>{window.imageWireName=meta.name;URL.revokeObjectURL(image.url);resolve();},()=>{}));
+        const start=remote.createDataChannel('fixture-setup');
+        await remote.setLocalDescription(await remote.createOffer());
+        await rtc.setRemoteDescription(remote.localDescription);
+        await rtc.setLocalDescription(await rtc.createAnswer());
+        await remote.setRemoteDescription(rtc.localDescription);
+        if(start.readyState!=='open')await new Promise(resolve=>start.onopen=resolve);
+        receiver.pc.createDataChannel=(...args)=>rtc.createDataChannel(...args);
+        chatForm.requestSubmit();
+        await received;
+        for(let i=0;sendingImage&&i<50;i++)await new Promise(resolve=>setTimeout(resolve,20));
+    })()`);
+    await check('Submitting a clipboard image delivers it and shows an inline copy', "imageWireName==='共享截图.png' && !!chatHistory.lastElementChild.querySelector('.chat-image img') && chatDraft.hidden");
+    await evaluate(`(async()=>{
+        const buffer=await imageFixture.arrayBuffer();
+        await FriendsChatImages.send(imageFixturePeers[1].createDataChannel('friends-chat-image-v1'), buffer,
+            { size:buffer.byteLength,mime:'image/png',name:'朋友的截图.png',text:'看这里',time:Date.now() }, 1024*1024);
+    })()`);
+    await check('A received picture appears inline and keeps the sender caption', "chatHistory.lastElementChild.querySelector('p').textContent==='看这里' && chatHistory.lastElementChild.querySelector('img').alt==='朋友的截图.png'");
+    await shot('24-chat-pictures');
+    await evaluate("chatHistory.lastElementChild.querySelector('.chat-image').click();$('chatImageFull').decode()");
+    await check('Clicking an image opens the full preview', "imageViewer.open && $('chatImageFull').naturalWidth===1280");
+    await shot('25-image-viewer');
+    await evaluate("imageViewer.close();for(const pc of imageFixturePeers)pc.close()");
     await check('No horizontal page overflow after native window transitions',"document.documentElement.scrollWidth===innerWidth");
     fs.writeFileSync(path.join(directory,'verification.json'),JSON.stringify({passed:true,checks},null,2));
     await evaluate("previewAudio.close()");

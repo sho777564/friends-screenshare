@@ -13,7 +13,7 @@ module.exports = function startServer(port = 3023) {
         if (!file.startsWith(root+path.sep)) { res.writeHead(403).end(); return; }
         fs.stat(file,(error,stat) => {
             if (error || !stat.isFile()) { res.writeHead(404).end(); return; }
-            res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream','Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' https://p2p.mirotalk.com wss://p2p.mirotalk.com; media-src 'self' blob:; img-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"});
+            res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream','Content-Length':stat.size,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' https://p2p.mirotalk.com wss://p2p.mirotalk.com; media-src 'self' blob:; img-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"});
             if (req.method==='HEAD') res.end(); else fs.createReadStream(file).pipe(res);
         });
     });

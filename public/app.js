@@ -493,22 +493,70 @@ function peerCard({id,name}){
     card.append(area,caption,controls);$('screens').append(card);const item={card,area,video,placeholder,live,status,watch,stream:null,watchPaused:false};cards.set(id,item);
     video.ondblclick=()=>run(()=>toggleFullscreen(area));return item;
 }
+let viewerWindow = { visible: true, focused: true };
+let backgroundVideo = false;
+let viewerTimer;
+
+function canWatchVideo(item) {
+    if (!viewerWindow.visible || item.watchPaused) return false;
+    if (miniPeer !== null) return item === cards.get(miniPeer);
+    return !backgroundVideo && (!fullscreenArea || item.area === fullscreenArea);
+}
+
+function updateRemoteViews() {
+    for (const [id, item] of cards) renderWatch(id, item);
+}
+
+function updateViewerWindow(state) {
+    viewerWindow = state;
+    clearTimeout(viewerTimer);
+    if (state.focused || !state.visible || miniPeer !== null) {
+        backgroundVideo = !state.focused;
+        updateRemoteViews();
+        return;
+    }
+    // Avoid restarting the decoder for very brief focus changes.
+    viewerTimer = setTimeout(() => {
+        backgroundVideo = true;
+        updateRemoteViews();
+    }, 750);
+}
+
+if (native?.onViewerWindow) {
+    native.onViewerWindow(updateViewerWindow);
+} else {
+    const updateVisibility = () => updateViewerWindow({
+        visible: !document.hidden,
+        focused: document.hasFocus(),
+    });
+    document.addEventListener('visibilitychange', updateVisibility);
+    window.addEventListener('focus', updateVisibility);
+    window.addEventListener('blur', updateVisibility);
+}
+
+function syncVideoRequest(id, item) {
+    const enabled = canWatchVideo(item);
+    if (item.requestedVideo === enabled) return;
+    if (call.requestPeerVideo(id, enabled)) item.requestedVideo = enabled;
+}
+
 function renderWatch(id, item) {
     const state = peerState.get(id);
     const sharing = !!state?.screen;
     const paused = sharing && item.watchPaused;
     item.card.classList.toggle('watch-paused', paused);
     item.watch.hidden = !sharing;
-    const label = paused ? '继续观看' : '暂停观看';
+    const label = paused ? '观看共享' : '退出观看';
     if (item.watch.title !== label) {
         item.watch.title = label;
         item.watch.setAttribute('aria-label', label);
-        item.watch.innerHTML = icon(paused ? 'play' : 'pause');
+        item.watch.innerHTML = icon(paused ? 'play' : 'screenOff');
         if (paused) item.watch.append(label);
     }
     item.live.hidden = !sharing || paused;
-    item.status.textContent = paused ? '已暂停观看' : sharing ? (state.sound ? '画面与声音' : '画面 · 声音静音') : (state?.mic ? '麦克风已开' : '麦克风静音');
-    const stream = paused ? null : item.stream;
+    item.status.textContent = paused ? '已退出观看' : sharing ? (state.sound ? '画面与声音' : '画面 · 声音静音') : (state?.mic ? '麦克风已开' : '麦克风静音');
+    const stream = sharing && canWatchVideo(item) ? item.stream : null;
+    syncVideoRequest(id, item);
     if (item.video.srcObject !== stream) {
         if (!stream) item.video.pause();
         item.video.srcObject = stream;
@@ -538,30 +586,40 @@ async function enterMini(peer) {
     for (const [id, item] of cards) item.card.classList.toggle('mini-target', id === peer);
     document.body.classList.add('mini-mode');
     $('miniReturn').hidden = false;
+    updateRemoteViews();
 }
 function restoreMiniView() {
     miniPeer = null;
     document.body.classList.remove('mini-mode');
     for (const item of cards.values()) item.card.classList.remove('mini-target');
     $('miniReturn').hidden = true;
+    updateRemoteViews();
 }
 $('miniReturn').onclick = () => run(async () => { await native.mini(false); restoreMiniView(); });
 native?.onMini?.(enabled => { if (!enabled) restoreMiniView(); });
-async function exitFullscreen(){const active=fullscreenArea;fullscreenArea=null;active?.classList.remove('fullscreen-media');if(document.fullscreenElement)await document.exitFullscreen();if(native?.fullscreen)await native.fullscreen(false);}
+async function exitFullscreen(){const active=fullscreenArea;fullscreenArea=null;active?.classList.remove('fullscreen-media');updateRemoteViews();if(document.fullscreenElement)await document.exitFullscreen();if(native?.fullscreen)await native.fullscreen(false);}
 async function toggleFullscreen(area){
     if (miniPeer !== null) { await native.mini(false); restoreMiniView(); }
     if(fullscreenArea===area)return exitFullscreen();fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=area;area.classList.add('fullscreen-media');
     try{if(native?.fullscreen)await native.fullscreen(true);else await area.requestFullscreen();}
     catch(error){area.classList.remove('fullscreen-media');fullscreenArea=null;throw error;}
+    finally{updateRemoteViews();}
 }
-document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&!native){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;}});
-native?.onFullscreen?.(value=>{if(!value){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;}});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&!native){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;updateRemoteViews();}});
+native?.onFullscreen?.(value=>{if(!value){fullscreenArea?.classList.remove('fullscreen-media');fullscreenArea=null;updateRemoteViews();}});
 call.addEventListener('peer',event=>{peerVolumes.bind(event.detail.id,call.peers.get(event.detail.id)?.identity);peerCard(event.detail);renderMembers();});
 call.addEventListener('compatibility', event => refreshPeerVolumes(event.detail.id));
 call.addEventListener('track',event=>{const {id,kind,stream}=event.detail,item=peerCard(event.detail);if(kind==='screen'){item.stream=stream;renderWatch(id,item);}else run(async()=>{await mixer.attach(id+':'+kind,stream);refreshPeerVolumes(id);});});
 call.addEventListener('peerleft',event=>{const id=event.detail.id;if(miniPeer===id)run(async()=>{await native.mini(false);restoreMiniView();});peerVolumes.forget(id);volumeWidgets.delete(id);});
 call.addEventListener('peerleft',event=>{const id=event.detail.id;if(fullscreenArea&&cards.get(id)?.card.contains(fullscreenArea))run(exitFullscreen);cards.get(id)?.card.remove();cards.delete(id);peerState.delete(id);mixer.remove(id+':voice');mixer.remove(id+':sound');$('emptyPeer').hidden=!!cards.size;renderMembers();});
-call.addEventListener('dataready',publish);
+call.addEventListener('dataready', ({ detail: { id } }) => {
+    publish();
+    const item = cards.get(id);
+    if (item) {
+        item.requestedVideo = undefined;
+        syncVideoRequest(id, item);
+    }
+});
 call.addEventListener('data', ({ detail: { id, data } }) => {
     if (data.type !== 'state' || !call.peers.has(id)) return;
     shareLog.remoteState(id, data);
@@ -585,52 +643,23 @@ call.addEventListener('signal', ({ detail }) => { void shareLog.event('signal', 
 call.addEventListener('data', event => {
     const { id, name, data } = event.detail;
     if (data.type === 'state') {
-        peerState.set(id, { mic:!!data.mic, deafened:!!data.deafened, speaking:!!data.speaking, screen:!!data.screen, sound:!!data.sound });
+        const previousShare = peerState.get(id)?.shareId;
+        const shareId = typeof data.shareId === 'string' ? data.shareId : null;
+        peerState.set(id, { mic:!!data.mic, deafened:!!data.deafened, speaking:!!data.speaking, screen:!!data.screen, sound:!!data.sound, shareId });
         const item = cards.get(id);
         if (item) {
             item.card.classList.toggle('speaking', !!data.speaking);
             item.card.classList.toggle('has-screen', !!data.screen);
             item.placeholder.hidden = !!data.screen;
-            if (!data.screen && item.watchPaused) {
+            if ((!data.screen || (previousShare && shareId && previousShare !== shareId)) && item.watchPaused) {
                 item.watchPaused = false;
                 refreshPeerVolumes(id);
             }
             renderWatch(id, item);
         }
         renderMembers();
-    } else if (data.type === 'chat' && typeof data.text === 'string') {
-        appendMessage(name, data.text.slice(0,2000), data.time);
     }
 });
-function appendMessage(name,text,time=Date.now(),own=false){
-    const list=$('messages');
-    const follow=own || list.scrollHeight-list.scrollTop-list.clientHeight<32;
-    list.querySelector('.chat-start')?.remove();
-    const message=document.createElement('article');
-    message.className='message';
-    const title=document.createElement('span');
-    title.className='message-author';
-    title.textContent=name;
-    const when=document.createElement('time');
-    const date=new Date(time);
-    when.textContent=Number.isNaN(date.getTime())?'':date.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
-    const body=document.createElement('p');
-    body.textContent=text;
-    message.append(title,when,body);
-    list.append(message);
-    if(follow) list.scrollTop=list.scrollHeight;
-}
-const chatInput=$('chatInput');
-function syncSendButton(){ $('sendMessage').disabled=!chatInput.value.trim(); }
-chatInput.addEventListener('input',syncSendButton);
-let confirmingComposition=false;
-chatInput.addEventListener('keydown',event=>{
-    if(event.key==='Enter' && (event.isComposing || event.keyCode===229)){
-        confirmingComposition=true;
-        setTimeout(()=>{confirmingComposition=false;},0);
-    }
-});
-$('chatForm').onsubmit=event=>{event.preventDefault();if(confirmingComposition)return;const text=$('chatInput').value.trim();if(!text)return;if(!call.sendData({type:'chat',text,time:Date.now()}))return toast('朋友尚未连上，消息没有发送。');appendMessage(call.name,text,Date.now(),true);chatInput.value='';syncSendButton();chatInput.focus();};
 function sidebarVisible(){return getComputedStyle($('rightSidebar')).display!=='none';}
 function setSidebar(open){
     const shell=document.querySelector('.shell');
@@ -663,7 +692,7 @@ $('diagnosticsOpen').onclick=()=>{location.href='/native-test.html';};
 native?.onShortcut(action=>{if(action==='mic')run(toggleMic);else if(action==='deafen')toggleDeafen();});
 native?.onInvite?.(room=>run(async()=>{if(!FriendsRooms.valid(room))return;await roomBoot;$('room').value=room;if(joined&&call.room!==room)joinDialog(true);else await quickJoin('invite');},'room'));
 roomBoot.then(()=>{if(query.get('invite')==='1')run(quickJoin);}).catch(error=>toast(error.message));
-document.addEventListener('keydown',event=>{if(event.key==='Escape'&&fullscreenArea){event.preventDefault();run(exitFullscreen);}if(event.code==='Space'&&settings.inputMode==='ptt'&&joined&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&!document.querySelector('dialog[open]')){event.preventDefault();if(!pttPressed){pttPressed=true;applyMute();}}});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&fullscreenArea){event.preventDefault();run(exitFullscreen);}if(event.code==='Space'&&settings.inputMode==='ptt'&&joined&&!/INPUT|TEXTAREA|SELECT|BUTTON/.test(event.target.tagName)&&!document.querySelector('dialog[open]')){event.preventDefault();if(!pttPressed){pttPressed=true;applyMute();}}});
 document.addEventListener('keyup',event=>{if(event.code==='Space'&&pttPressed){pttPressed=false;applyMute();}});window.addEventListener('blur',()=>{if(pttPressed){pttPressed=false;applyMute();}});
 let wasSpeaking=false;setInterval(()=>{const level=voice.level();$('inputLevel').style.width=Math.min(100,level*350)+'%';const speaking=!!rawMic&&!effectiveMuted()&&level>.012;document.querySelector('.local-card').classList.toggle('speaking',speaking);if(speaking!==wasSpeaking){wasSpeaking=speaking;publish(speaking);}},120);
 const fmt=(value,digits=0)=>typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'—';
@@ -719,12 +748,12 @@ setInterval(async()=>{
             for(const media of peer.media){if(media.kind!=='screen'&&media.direction!=='receive')continue;const line=document.createElement('div');line.className='stat-line';line.textContent=media.kind==='screen'?(media.direction==='send'?'发出 ':'收到 ')+(media.width||'—')+'×'+(media.height||'—')+' · '+fmt(media.fps,1)+' fps · '+fmt(media.bitrate===null?null:media.bitrate/1e6,2)+' Mbps · '+(media.codec||'')+' · '+(media.limitation==='cpu'?'编码负载限制':media.limitation==='bandwidth'?'网络带宽限制':''):(media.kind==='voice'?'语音 ':'共享声音 ')+fmt(media.bitrate===null?null:media.bitrate/1000)+' kbps';box.append(line);}
             $('stats').append(box);
         }
-        for(const peer of peers){const rx=peer.media.find(m=>m.kind==='screen'&&m.direction==='receive');const card=cards.get(peer.id);if(card&&rx?.width&&rx.fps)card.status.textContent=rx.width+'×'+rx.height+' · '+fmt(rx.fps)+' fps · '+fmt(rx.bitrate/1e6,1)+' Mbps';}
+        for(const peer of peers){const rx=peer.media.find(m=>m.kind==='screen'&&m.direction==='receive');const card=cards.get(peer.id);if(card&&canWatchVideo(card)&&rx?.width&&rx.fps)card.status.textContent=rx.width+'×'+rx.height+' · '+fmt(rx.fps)+' fps · '+fmt(rx.bitrate/1e6,1)+' Mbps';}
         const constrained=display&&peers.some(p=>p.videoTargetFps&&Number.isFinite(p.availableMbps)&&p.availableMbps<1);
         $('advice').textContent=constrained?'这一路可用上行偏低，正在降低视频发送目标，给语音和共享声音留出空间。':peers.some(p=>p.path==='TURN 中继')?'当前媒体经过公共中继，其路径和带宽可能限制画质。':'静止画面低帧率可能正常，请在游戏或视频运动时查看实际帧率。';
     }catch(error){console.warn(error);}finally{statsBusy=false;}
 },2000);
-if(native)native.info().then(info=>{desktopInfo=info;showMaximized(info.maximized);$('nativeBadge').textContent='Windows 桌面版 · '+info.version;$('engineInfo').textContent='Electron '+info.electron+' · Chromium '+info.chrome+' · Windows '+info.windows;});
+if(native)native.info().then(info=>{desktopInfo=info;showMaximized(info.maximized);if(info.localPreview)document.title='同屏 · 功能预览';$('nativeBadge').textContent=info.localPreview?'功能预览':'Windows 桌面版 · '+info.version;$('engineInfo').textContent='Electron '+info.electron+' · Chromium '+info.chrome+' · Windows '+info.windows;});
 else{$('nativeBadge').textContent='网页预览 · 防回音共享请用桌面版';$('engineInfo').textContent='当前为浏览器预览。完整的系统声音排除需要桌面版。';}
 $('copyVideoDiagnostic').onclick=()=>run(async()=>{
     const captureSettings=display?.getVideoTracks()[0]?.getSettings();

@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('friendsDesktop',{
     fullscreen:value=>ipcRenderer.invoke('desktop:fullscreen',value),
     mini: value => ipcRenderer.invoke('desktop:mini', value),
     callAlert: (ringing, name) => ipcRenderer.invoke('desktop:call-alert', ringing, name),
-    updates: {
+    updates: process.argv.includes('--local-preview') ? null : {
         status:()=>ipcRenderer.invoke('updates:status'),
         configure:url=>ipcRenderer.invoke('updates:configure',url),
         check:()=>ipcRenderer.invoke('updates:check'),
@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld('friendsDesktop',{
         local:()=>ipcRenderer.invoke('updates:local'),
         install:()=>ipcRenderer.invoke('updates:install'),
         onStatus:callback=>{const handler=(event,status)=>callback(status);ipcRenderer.on('desktop:update',handler);return()=>ipcRenderer.removeListener('desktop:update',handler);},
+    },
+    onViewerWindow: callback => {
+        const handler = (event, state) => callback(state);
+        ipcRenderer.on('desktop:viewer-window', handler);
+        return () => ipcRenderer.removeListener('desktop:viewer-window', handler);
     },
     onMini: callback => {
         const handler = (event, enabled) => callback(enabled);

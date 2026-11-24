@@ -12,12 +12,13 @@ const videoDiagnostics = process.argv.includes('--test-video')||inspectVideoSett
 const uiDiagnostics = process.argv.includes('--test-ui');
 const roomDiagnostics = uiDiagnostics && process.argv.includes('--test-room-diagnostics');
 const phoneDiagnostics = process.argv.includes('--test-phone');
-const ORIGIN=phoneDiagnostics?'http://localhost:3039':uiDiagnostics?'http://localhost:3038':videoDiagnostics?'http://localhost:3037':multiDiagnostics?'http://localhost:3036':fileDiagnostics?'http://localhost:3033':'http://localhost:3023';
+const localPreview=process.argv.includes('--local-preview');
+const ORIGIN=localPreview?'http://localhost:3048':phoneDiagnostics?'http://localhost:3039':uiDiagnostics?'http://localhost:3038':videoDiagnostics?'http://localhost:3037':multiDiagnostics?'http://localhost:3036':fileDiagnostics?'http://localhost:3033':'http://localhost:3023';
 const fixture = process.argv.includes('--audio-fixture');
 const diagnostics = process.argv.includes('--diagnostics');
 const autoDiagnostics = process.argv.includes('--test-audio');
 app.setName('同屏');
-app.setPath('userData',path.join(app.getPath('appData'),phoneDiagnostics?'FriendsScreenShare-phone-test':uiDiagnostics?'FriendsScreenShare-ui-test':videoDiagnostics?'FriendsScreenShare-video-test':multiDiagnostics?'FriendsScreenShare-multi-test':fileDiagnostics?'FriendsScreenShare-file-test':fixture?'FriendsScreenShare-fixture':'FriendsScreenShare-v2'));
+app.setPath('userData',path.join(app.getPath('appData'),localPreview?'FriendsScreenShare-feature-preview':phoneDiagnostics?'FriendsScreenShare-phone-test':uiDiagnostics?'FriendsScreenShare-ui-test':videoDiagnostics?'FriendsScreenShare-video-test':multiDiagnostics?'FriendsScreenShare-multi-test':fileDiagnostics?'FriendsScreenShare-file-test':fixture?'FriendsScreenShare-fixture':'FriendsScreenShare-v2'));
 fs.mkdirSync(app.getPath('userData'),{recursive:true});
 app.setPath('sessionData',app.getPath('userData'));
 const primaryInstance=fixture||fileDiagnostics||multiDiagnostics||videoDiagnostics||uiDiagnostics||phoneDiagnostics||app.requestSingleInstanceLock();
@@ -32,7 +33,7 @@ let launchRoom=roomFromArgs(process.argv);
 const trusted = event => !!mainWindow && event.sender.id===mainWindow.webContents.id && event.senderFrame?.url.startsWith(ORIGIN+'/') && !event.senderFrame.parent;
 const guarded = fn => async (event,...args) => { if (!trusted(event)) throw new Error('Untrusted request'); return fn(event,...args); };
 function createWindow(url,title='同屏') {
-    const win = new BrowserWindow({width:1450,height:940,minWidth:1000,minHeight:680,title,show:!fixture&&!autoDiagnostics&&!videoDiagnostics&&!fileDiagnostics&&!multiDiagnostics&&!uiDiagnostics&&!phoneDiagnostics,frame:false,backgroundColor:'#1b1b1f',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
+    const win = new BrowserWindow({width:1450,height:940,minWidth:1000,minHeight:680,title,show:!fixture&&!autoDiagnostics&&!videoDiagnostics&&!fileDiagnostics&&!multiDiagnostics&&!uiDiagnostics&&!phoneDiagnostics,frame:false,backgroundColor:'#1b1b1f',autoHideMenuBar:true,webPreferences:{additionalArguments:localPreview?['--local-preview']:[],preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,backgroundThrottling:false,autoplayPolicy:'no-user-gesture-required'}});
     win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     win.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith(ORIGIN+'/'))event.preventDefault();});
     win.loadURL(url); return win;
@@ -50,9 +51,9 @@ app.whenReady().then(async()=>{
     if(!primaryInstance)return;
     if(fixture){mainWindow=createWindow(ORIGIN+'/audio-fixture.html','同屏外部音频测试进程');setTimeout(()=>app.quit(),180000);return;}
     await recordDiagnostic({area:'application',event:'start'});
-    try { server=await require('../server.cjs')(phoneDiagnostics?3039:uiDiagnostics?3038:videoDiagnostics?3037:multiDiagnostics?3036:fileDiagnostics?3033:3023); } catch(error){await recordDiagnostic({area:'application',event:'error',...errorFields(error)});dialog.showErrorBox('同屏无法启动','本地端口已被占用。请先关闭另一个版本，原程序不会被强制停止。\n'+error.message);app.quit();return;}
+    try { server=await require('../server.cjs')(localPreview?3048:phoneDiagnostics?3039:uiDiagnostics?3038:videoDiagnostics?3037:multiDiagnostics?3036:fileDiagnostics?3033:3023); } catch(error){await recordDiagnostic({area:'application',event:'error',...errorFields(error)});dialog.showErrorBox('同屏无法启动','本地端口已被占用。请先关闭另一个版本，原程序不会被强制停止。\n'+error.message);app.quit();return;}
     const ses=session.defaultSession;
-    if(!diagnostics&&!autoDiagnostics&&!videoDiagnostics&&!fileDiagnostics&&!multiDiagnostics&&!uiDiagnostics&&!phoneDiagnostics)app.setAsDefaultProtocolClient('friends-screen',process.execPath,[app.getAppPath()]);
+    if(!localPreview&&!diagnostics&&!autoDiagnostics&&!videoDiagnostics&&!fileDiagnostics&&!multiDiagnostics&&!uiDiagnostics&&!phoneDiagnostics)app.setAsDefaultProtocolClient('friends-screen',process.execPath,[app.getAppPath()]);
     require('./file-ipc.cjs')({ipcMain,guarded,dialog,shell,app,window:()=>mainWindow,testMode:fileDiagnostics||multiDiagnostics});
     const updates = new Updates({appRoot:path.resolve(__dirname,'..'),version:app.getVersion(),
         publicKey:fs.readFileSync(path.join(__dirname,'update-public-key.pem'),'utf8'),fetch:(url,options)=>net.fetch(url,options),
@@ -101,7 +102,7 @@ app.whenReady().then(async()=>{
             recordDiagnostic({area:'application',event:'stop'}),
         ]).then(() => app.quit());
     });
-    const audioHotkeys=enabled=>{if(fileDiagnostics||multiDiagnostics||videoDiagnostics||uiDiagnostics||phoneDiagnostics)return;for(const [key,action] of [['CommandOrControl+Shift+M','mic'],['CommandOrControl+Shift+D','deafen']]){globalShortcut.unregister(key);if(enabled)globalShortcut.register(key,()=>mainWindow?.webContents.send('desktop:shortcut',action));}};
+    const audioHotkeys=enabled=>{if(localPreview||fileDiagnostics||multiDiagnostics||videoDiagnostics||uiDiagnostics||phoneDiagnostics)return;for(const [key,action] of [['CommandOrControl+Shift+M','mic'],['CommandOrControl+Shift+D','deafen']]){globalShortcut.unregister(key);if(enabled)globalShortcut.register(key,()=>mainWindow?.webContents.send('desktop:shortcut',action));}};
     remoteBridge=require('./remote-ipc.cjs')({ipcMain,guarded,dialog,screen,app,globalShortcut,window:()=>mainWindow,audioHotkeys});
     ses.setPermissionCheckHandler((wc,permission,origin,details)=>{
         if(wc?.id!==mainWindow?.webContents.id || !origin.startsWith(ORIGIN))return false;
@@ -123,7 +124,7 @@ app.whenReady().then(async()=>{
             callback({video:source,...(chosen.audio&&request.audioRequested?{audio:'loopback'}:{})});
         }catch{callback({});}
     });
-    ipcMain.handle('desktop:info',guarded(()=>({version:app.getVersion(),electron:process.versions.electron,chrome:process.versions.chrome,windows:require('node:os').release(),gpu:app.getGPUFeatureStatus(),maximized:mainWindow.isMaximized(),native:true})));
+    ipcMain.handle('desktop:info',guarded(()=>({version:app.getVersion(),electron:process.versions.electron,chrome:process.versions.chrome,windows:require('node:os').release(),gpu:app.getGPUFeatureStatus(),maximized:mainWindow.isMaximized(),localPreview,native:true})));
     ipcMain.handle('desktop:sources',guarded(async()=>{
         const sources=await desktopCapturer.getSources({types:['screen','window'],thumbnailSize:{width:280,height:158},fetchWindowIcons:true});
         return sources.filter(s=>!s.name.startsWith('同屏') || s.name==='同屏音频测试源').map(s=>({id:s.id,name:s.name,type:s.id.startsWith('screen:')?'screen':'window',thumbnail:s.thumbnail.toDataURL()}));
@@ -171,6 +172,17 @@ app.whenReady().then(async()=>{
         if(event.senderFrame.url.startsWith(ORIGIN+'/native-test.html'))server.fixtureTone=value===true;
     }));
     mainWindow=createWindow(ORIGIN+(phoneDiagnostics?'/phone-test.html':uiDiagnostics?'/ui-test.html'+(roomDiagnostics?'?roomDiagnostics=1':process.argv.includes('--ui-phase2')?'?phase=2':''):multiDiagnostics?'/multi-test.html'+(process.argv.includes('--public-signal')?'?public=1':''):fileDiagnostics?'/file-test.html':videoDiagnostics?'/video-test.html?autorun=1'+(inspectVideoSettings?'&prefs=1':'')+(process.argv.includes('--video-720')?'&q=720':''):diagnostics||autoDiagnostics?'/native-test.html'+(autoDiagnostics?'?autorun=1':''):launchRoom?'/?room='+encodeURIComponent(launchRoom)+'&invite=1':'/'));
+    const sendViewerWindowState = () => {
+        if (mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send('desktop:viewer-window', {
+            visible: mainWindow.isVisible() && !mainWindow.isMinimized(),
+            focused: mainWindow.isFocused(),
+        });
+    };
+    for (const event of ['show', 'hide', 'minimize', 'restore', 'focus', 'blur']) {
+        mainWindow.on(event, sendViewerWindowState);
+    }
+    mainWindow.webContents.on('did-finish-load', sendViewerWindowState);
     mainWindow.on('maximize',()=>mainWindow?.webContents.send('desktop:maximized',true));
     mainWindow.on('unmaximize',()=>mainWindow?.webContents.send('desktop:maximized',false));
     mainWindow.on('leave-full-screen',()=>mainWindow?.webContents.send('desktop:fullscreen-changed',false));
@@ -185,7 +197,7 @@ app.whenReady().then(async()=>{
     if (!diagnostics && !autoDiagnostics && !videoDiagnostics && !fileDiagnostics && !multiDiagnostics && !uiDiagnostics && !phoneDiagnostics) {
         try {
             tray = new Tray(path.join(__dirname, 'tray.ico'));
-            tray.setToolTip('同屏');
+            tray.setToolTip(localPreview?'同屏 · 功能预览':'同屏');
             tray.on('click', showMainWindow);
             tray.setContextMenu(Menu.buildFromTemplate([
                 { label: '打开同屏', click: showMainWindow },

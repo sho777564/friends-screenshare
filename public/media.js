@@ -385,7 +385,7 @@
             for (const sample of stats) {
                 const p = this.peers.get(sample.id);
                 if (this.tracks.screen !== screen) break;
-                if (!p || p.pc.connectionState !== 'connected' || !sample.protocol) continue;
+                if (!p || p.remoteVideoEnabled === false || p.pc.connectionState !== 'connected' || !sample.protocol) continue;
                 const sent = sample.media.filter(m => m.direction === 'send');
                 const outgoing = sent.find(m => m.kind === 'screen');
                 if (!outgoing?.width || !outgoing.height) continue;
@@ -407,17 +407,59 @@
         }
         attachData(p, channel) {
             if(/^friends-file-v1:[a-f0-9-]{36}$/.test(channel.label)){this.emit('filechannel',{id:p.id,name:p.name,channel});return;}
-            if(channel.label!=='friends-chat')return;
-            p.channel=channel;
-            channel.onopen=()=>{channel.send(JSON.stringify({type:'hello',version:'2.5.0',identity:this.uuid,participants:MAX_PARTICIPANTS,control:2}));this.emit('dataready',{id:p.id});};
-            channel.onmessage=event=>{
-                if(typeof event.data!=='string'||event.data.length>10000)return;
-                try{const data=JSON.parse(event.data);if(data.type==='hello'&&typeof data.version==='string'&&data.version.length<32){p.clientVersion=data.version;p.controlProtocol=data.control;if(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.identity||''))p.identity=data.identity;this.emit('compatibility',{id:p.id,version:data.version,control:data.control});}else if(['chat','state','control'].includes(data.type))this.emit('data',{id:p.id,name:p.name,data});}catch{}
+            if (channel.label === 'friends-chat-image-v1') {
+                this.emit('imagechannel', { id: p.id, name: p.name, channel });
+                return;
+            }
+            if (channel.label !== 'friends-chat') return;
+            p.channel = channel;
+            channel.onopen = () => {
+                channel.send(JSON.stringify({
+                    type: 'hello', version: '2.5.0', identity: this.uuid,
+                    participants: MAX_PARTICIPANTS, control: 2, chatImage: 1,
+                }));
+                this.emit('dataready', { id: p.id });
+            };
+            channel.onmessage = event => {
+                if (typeof event.data !== 'string' || event.data.length > 10000) return;
+                let data;
+                try { data = JSON.parse(event.data); } catch { return; }
+                if (!data) return;
+                if (data.type === 'hello' && typeof data.version === 'string' && data.version.length < 32) {
+                    p.clientVersion = data.version;
+                    p.controlProtocol = data.control;
+                    p.chatImage = data.chatImage === 1;
+                    if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.identity || '')) p.identity = data.identity;
+                    this.emit('compatibility', { id: p.id, version: data.version, control: data.control });
+                } else if (data.type === 'viewer' && typeof data.video === 'boolean') {
+                    if (p.remoteVideoEnabled === data.video) return;
+                    p.remoteVideoEnabled = data.video;
+                    this.applySenderQuality(p, 'screen').catch(error => this.fail(error));
+                } else if (['chat', 'state', 'control'].includes(data.type)) {
+                    this.emit('data', { id: p.id, name: p.name, data });
+                }
             };
         }
         sendData(data) {
             const value=JSON.stringify(data);if(value.length>10000)throw new Error('消息过长');
             let sent=false;for(const p of this.peers.values())if(p.channel?.readyState==='open'){p.channel.send(value);sent=true;}return sent;
+        }
+        requestPeerVideo(id, enabled) {
+            const channel = this.peers.get(id)?.channel;
+            if (channel?.readyState !== 'open') return false;
+            try {
+                channel.send(JSON.stringify({ type: 'viewer', video: enabled }));
+                return true;
+            } catch {
+                return false;
+            }
+        }
+        openImageChannel(id) {
+            const peer = this.peers.get(id);
+            if (!peer?.chatImage || peer.channel?.readyState !== 'open') {
+                throw new Error('此成员尚未连接图片聊天');
+            }
+            return peer.pc.createDataChannel('friends-chat-image-v1', { ordered: true });
         }
         sendControl(peer,payload){
             const channel=this.peers.get(peer)?.channel;
@@ -507,13 +549,18 @@
                 const params = sender.getParameters();
                 if (!params.encodings?.length) continue;
                 const profile = kind === 'screen' ? this.encodingQuality(p) : null;
+                const active = p.remoteVideoEnabled !== false;
                 const bitrate = profile ? Math.round(profile.bitrate * 1_000_000) : kind === 'sound' ? SOUND_BITRATE : VOICE_BITRATE;
                 const sameEncodings = params.encodings.every(enc => enc.maxBitrate === bitrate
-                    && (!profile || (enc.maxFramerate === profile.fps && enc.scaleResolutionDownBy === profile.scale)));
+                    && (!profile || ((enc.active !== false) === active && enc.maxFramerate === profile.fps && enc.scaleResolutionDownBy === profile.scale)));
                 if (sameEncodings && (!profile || params.degradationPreference === profile.degradation)) continue;
                 for (const enc of params.encodings) {
                     enc.maxBitrate = bitrate;
-                    if (profile) { enc.maxFramerate = profile.fps; enc.scaleResolutionDownBy = profile.scale; }
+                    if (profile) {
+                        enc.active = active;
+                        enc.maxFramerate = profile.fps;
+                        enc.scaleResolutionDownBy = profile.scale;
+                    }
                 }
                 if (profile) params.degradationPreference = profile.degradation;
                 try { await sender.setParameters(params); }
