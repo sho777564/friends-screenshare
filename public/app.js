@@ -506,46 +506,25 @@ function peerCard({id,name}){
     card.append(area,caption,controls);$('screens').append(card);const item={card,area,video,placeholder,live,status,watch,username,placeholderName:title,stream:null,watchPaused:false};cards.set(id,item);
     video.ondblclick=()=>run(()=>toggleFullscreen(area));return item;
 }
-let viewerWindow = { visible: true, focused: true };
-let backgroundVideo = false;
-let viewerTimer;
+let viewerMinimized = false;
 
 function canWatchVideo(item) {
-    if (!viewerWindow.visible || item.watchPaused) return false;
+    if (viewerMinimized || item.watchPaused) return false;
     if (miniPeer !== null) return item === cards.get(miniPeer);
-    return !backgroundVideo && (!fullscreenArea || item.area === fullscreenArea);
+    return !fullscreenArea || item.area === fullscreenArea;
 }
 
 function updateRemoteViews() {
     for (const [id, item] of cards) renderWatch(id, item);
 }
 
-function updateViewerWindow(state) {
-    viewerWindow = state;
-    clearTimeout(viewerTimer);
-    if (state.focused || !state.visible || miniPeer !== null) {
-        backgroundVideo = !state.focused;
-        updateRemoteViews();
-        return;
-    }
-    // Avoid restarting the decoder for very brief focus changes.
-    viewerTimer = setTimeout(() => {
-        backgroundVideo = true;
-        updateRemoteViews();
-    }, 750);
+function updateViewerWindow({ minimized }) {
+    if (viewerMinimized === minimized) return;
+    viewerMinimized = minimized;
+    updateRemoteViews();
 }
 
-if (native?.onViewerWindow) {
-    native.onViewerWindow(updateViewerWindow);
-} else {
-    const updateVisibility = () => updateViewerWindow({
-        visible: !document.hidden,
-        focused: document.hasFocus(),
-    });
-    document.addEventListener('visibilitychange', updateVisibility);
-    window.addEventListener('focus', updateVisibility);
-    window.addEventListener('blur', updateVisibility);
-}
+native?.onViewerWindow?.(updateViewerWindow);
 
 function syncVideoRequest(id, item) {
     const enabled = canWatchVideo(item);

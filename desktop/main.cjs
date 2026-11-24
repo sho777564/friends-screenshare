@@ -172,16 +172,19 @@ app.whenReady().then(async()=>{
         if(event.senderFrame.url.startsWith(ORIGIN+'/native-test.html'))server.fixtureTone=value===true;
     }));
     mainWindow=createWindow(ORIGIN+(phoneDiagnostics?'/phone-test.html':uiDiagnostics?'/ui-test.html'+(roomDiagnostics?'?roomDiagnostics=1':process.argv.includes('--ui-phase2')?'?phase=2':''):multiDiagnostics?'/multi-test.html'+(process.argv.includes('--public-signal')?'?public=1':''):fileDiagnostics?'/file-test.html':videoDiagnostics?'/video-test.html?autorun=1'+(inspectVideoSettings?'&prefs=1':'')+(process.argv.includes('--video-720')?'&q=720':''):diagnostics||autoDiagnostics?'/native-test.html'+(autoDiagnostics?'?autorun=1':''):launchRoom?'/?room='+encodeURIComponent(launchRoom)+'&invite=1':'/'));
+    let hiddenByClose = false;
     const sendViewerWindowState = () => {
         if (mainWindow.isDestroyed()) return;
         mainWindow.webContents.send('desktop:viewer-window', {
-            visible: mainWindow.isVisible() && !mainWindow.isMinimized(),
-            focused: mainWindow.isFocused(),
+            minimized: hiddenByClose || mainWindow.isMinimized(),
         });
     };
-    for (const event of ['show', 'hide', 'minimize', 'restore', 'focus', 'blur']) {
-        mainWindow.on(event, sendViewerWindowState);
-    }
+    mainWindow.on('minimize', sendViewerWindowState);
+    mainWindow.on('restore', sendViewerWindowState);
+    mainWindow.on('show', () => {
+        hiddenByClose = false;
+        sendViewerWindowState();
+    });
     mainWindow.webContents.on('did-finish-load', sendViewerWindowState);
     mainWindow.on('maximize',()=>mainWindow?.webContents.send('desktop:maximized',true));
     mainWindow.on('unmaximize',()=>mainWindow?.webContents.send('desktop:maximized',false));
@@ -192,7 +195,11 @@ app.whenReady().then(async()=>{
         if (!hideToTray && !miniWindow.active) return;
         event.preventDefault();
         if (miniWindow.active) miniWindow.set(false);
-        if (hideToTray) mainWindow.hide();
+        if (hideToTray) {
+            hiddenByClose = true;
+            mainWindow.hide();
+            sendViewerWindowState();
+        }
     });
     if (!diagnostics && !autoDiagnostics && !videoDiagnostics && !fileDiagnostics && !multiDiagnostics && !uiDiagnostics && !phoneDiagnostics) {
         try {

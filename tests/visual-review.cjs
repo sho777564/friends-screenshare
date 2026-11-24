@@ -44,8 +44,7 @@ async function run() {
     const checks=[];
     const check=async(name,code)=>{const pass=await evaluate(code);checks.push({name,pass:!!pass});if(!pass)throw new Error(name);};
 
-    // The review captures a hidden native window. Model an attentive viewer except in the window-state checks.
-    await evaluate("updateViewerWindow({visible:true,focused:true});localStorage.setItem('friendsAutoUpdate','off')");
+    await evaluate("localStorage.setItem('friendsAutoUpdate','off')");
     await evaluate("roomBoot.then(() => { phoneController?.stop(); })");
     await win.webContents.insertCSS('*,*::before,*::after{animation:none!important;transition:none!important}');
     async function shot(name, width = 1450, height = 940) {
@@ -110,18 +109,18 @@ async function run() {
     await check('Independent mute reaches the real audio mixer without changing media volume',"mixer.entries.get('preview-lin:voice').volume===0 && mixer.entries.get('preview-lin:sound').volume===.4");
     await evaluate("cards.get('preview-lin').card.querySelector('.volume-control button').click()");
     await check('Unmute restores the selected voice gain',"mixer.entries.get('preview-lin:voice').volume===1.75");
-    win.webContents.send('desktop:viewer-window', { visible: true, focused: false });
+    win.emit('blur');
+    await evaluate("window.dispatchEvent(new Event('blur'))");
     await pause(850);
-    await check('Alt-Tab suspends the remote video but preserves both audio gains', "!cards.get('preview-lin').video.srcObject && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===.4");
-    win.webContents.send('desktop:viewer-window', { visible: true, focused: true });
-    await check('Focusing the viewer restores the video on the same stream', "cards.get('preview-lin').video.srcObject===previewStream");
-    win.webContents.send('desktop:viewer-window', { visible: false, focused: false });
-    await check('Minimize or tray hide immediately detaches video', "!cards.get('preview-lin').video.srcObject");
-    win.webContents.send('desktop:viewer-window', { visible: true, focused: true });
+    await check('A window losing focus keeps playing the remote video', "cards.get('preview-lin').video.srcObject===previewStream");
+    win.webContents.send('desktop:viewer-window', { minimized: true });
+    await check('Minimizing detaches video and preserves both audio gains', "!cards.get('preview-lin').video.srcObject && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===.4");
+    win.webContents.send('desktop:viewer-window', { minimized: false });
+    await check('Restoring the window resumes on the same stream', "cards.get('preview-lin').video.srcObject===previewStream");
     await check('Shared audio cannot exceed 100 percent',"cards.get('preview-lin').card.querySelectorAll('input')[1].max==='100'");
     await evaluate("cards.get('preview-lin').watch.click()");
-    win.webContents.send('desktop:viewer-window', { visible: false, focused: false });
-    win.webContents.send('desktop:viewer-window', { visible: true, focused: true });
+    win.webContents.send('desktop:viewer-window', { minimized: true });
+    win.webContents.send('desktop:viewer-window', { minimized: false });
     await check('Restoring the window leaves explicitly exited shares stopped', "cards.get('preview-lin').watchPaused && !cards.get('preview-lin').video.srcObject");
     await check('Pausing detaches video and mutes shared audio while voice and room stay active', "(()=>{const item=cards.get('preview-lin');return joined && item.watchPaused && !item.video.srcObject && item.watch.textContent==='观看共享' && mixer.entries.get('preview-lin:voice').volume===1.75 && mixer.entries.get('preview-lin:sound').volume===0;})()");
     await shot('21-paused-view');
